@@ -1,0 +1,54 @@
+.expanded {
+  padding: 0 40px 28px 40px;
+  animation: fadeUp 0.2s ease;
+  word-break: break-all;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 14px;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  color: #a7a7a7;
+  padding-right: 20px;
+}
+
+.metaLabel {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #838184;
+}
+
+.stackTrace {
+  margin: 0;
+  padding: 14px 16px;
+  background: hsl(0, 0%, 10.6%);
+  border-left: 2px solid #cf6a4c;
+  font-size: 13px;
+  font-family: inherit;
+  color: #cf6a4c;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.7;
+  border-radius: 0 4px 4px 0;
+}

@@ -1,0 +1,27 @@
+.genBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  border: 1px solid #323537;
+  border-radius: 4px;
+  background: transparent;
+  color: #9b859d;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.genBtn:hover {
+  color: #b89dbd;
+  border-color: #9b859d;
+  background: rgba(155, 133, 157, 0.08);
+}
+.genBtnActive {
+  color: #9b859d;
+  border-color: #9b859d;
+  background: rgba(155, 133, 157, 0.12);
+}

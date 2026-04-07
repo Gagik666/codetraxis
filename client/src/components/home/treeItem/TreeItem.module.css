@@ -1,0 +1,91 @@
+.item {
+    display: block;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    padding-left: calc(8px + (var(--depth, 0) * 12px));
+    border-radius: 6px;
+    cursor: pointer;
+    color: #ffffff;
+    user-select: none;
+}
+
+.row:hover {
+    background-color: #2a2a2a;
+}
+
+.rowSelected {
+    background-color: #1e3a5f;
+}
+
+.rowSelected:hover {
+    background-color: #1e3a5f;
+}
+
+.caret {
+    width: 12px;
+    text-align: center;
+    color: #8a8a8a;
+    line-height: 1;
+    flex: 0 0 12px;
+}
+
+.icon {
+    width: 16px;
+    text-align: center;
+    line-height: 1;
+    flex: 0 0 16px;
+}
+
+.name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 16px;
+    font-weight: 500;
+    flex: 1;
+}
+
+/* ─── Git статус бейдж ─────────────────────────────────────── */
+
+.gitBadge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    line-height: 1.6;
+}
+
+.gitBadge.modified  { background: rgba(230, 152,  40, 0.18); color: #e69828; }
+.gitBadge.untracked { background: rgba( 80, 200, 120, 0.18); color: #50c878; }
+.gitBadge.added     { background: rgba( 70, 150, 240, 0.18); color: #4696f0; }
+.gitBadge.deleted   { background: rgba(220,  70,  70, 0.18); color: #dc4646; }
+.gitBadge.renamed   { background: rgba(180, 100, 240, 0.18); color: #b464f0; }
+.gitBadge.conflicted{ background: rgba(240,  80,  80, 0.20); color: #f05050; }
+
+/* ─── Цвет имени файла по статусу ─────────────────────────── */
+
+.nameModified  { color: #e69828; }
+.nameUntracked { color: #50c878; }
+.nameAdded     { color: #4696f0; }
+.nameDeleted   { color: #dc4646; text-decoration: line-through; opacity: 0.7; }
+.nameRenamed   { color: #b464f0; }
+.nameConflicted{ color: #f05050; }
+
+.children {
+    display: block;
+}
+
+.emptyFolder {
+    padding: 6px 8px;
+    padding-left: calc(8px + (var(--depth, 0) * 12px) + 12px);
+    color: #8a8a8a;
+    font-size: 12px;
+}

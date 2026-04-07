@@ -1,0 +1,26 @@
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  border: 1px solid #323537;
+  border-radius: 4px;
+  background: transparent;
+  color: #838184;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.copyBtn:hover {
+  color: #a7a7a7;
+  border-color: #464b50;
+  background: rgba(255, 255, 255, 0.04);
+}
+.copyBtnDone {
+  color: #8f9d6a !important;
+  border-color: #8f9d6a !important;
+}

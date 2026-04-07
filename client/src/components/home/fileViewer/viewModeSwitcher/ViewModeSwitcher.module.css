@@ -1,0 +1,41 @@
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #141414;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: #242424;
+  color: #bbb;
+}
+
+.btnActive {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

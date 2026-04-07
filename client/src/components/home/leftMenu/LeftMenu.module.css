@@ -1,0 +1,23 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    width: 40px;
+    height: 100%;
+    align-items: center;
+    
+    border-right: 1px solid;
+}
+
+.iconContainer {
+    margin-top: 8px;
+    width: 24px;
+    height: 24px;
+    justify-content: center;
+    align-items: center;
+    opacity: 0.5;
+}
+
+.iconContainer:hover {
+    cursor: pointer;
+    opacity: 1;
+}

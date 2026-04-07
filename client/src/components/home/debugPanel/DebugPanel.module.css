@@ -1,0 +1,159 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Debug Panel — container / header / filter-bar / timeline only.
+   Component-level styles live in each component's own .module.css.
+   Colors from Reactotron dark theme:
+   background:       #1e1e1e
+   backgroundDarker: #1b1b1b
+   backgroundSubtle: #151515
+   chrome:           #212121
+   chromeLine:       #252525
+   foreground:       #a7a7a7
+   foregroundDark:   #838184
+   tag (orange):     #cf6a4c
+   string (green):   #8f9d6a
+   constant (gold):  #cda869
+   keyword (purple): #9b859d
+   heading (blue):   #7587a6
+   line:             hsl(204, 4.8%, 18.5%)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Container ───────────────────────────────────────────────────── */
+.container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1e1e1e;
+  overflow: hidden;
+  font-family: "Fira Code", "SF Mono", "Consolas", "Segoe UI", sans-serif;
+  font-size: 15px;
+  color: #a7a7a7;
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 50px;
+  background: #212121;
+  border-bottom: 1px solid #252525;
+  flex-shrink: 0;
+  padding: 0 10px 0 16px;
+}
+
+.headerTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #838184;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 20px;
+  flex-shrink: 0;
+}
+
+/* ── Filter bar ──────────────────────────────────────────────────── */
+.filterBar {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.filterBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 400;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #838184;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.filterBtn:hover {
+  color: #a7a7a7;
+  background: #252525;
+}
+.filterBtnActive {
+  color: #a7a7a7;
+  background: #2a2a2a;
+}
+
+.filterCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #323537;
+  color: #838184;
+  line-height: 1;
+}
+.filterCountActive {
+  background: #464b50;
+  color: #a7a7a7;
+}
+
+/* ── Header actions ──────────────────────────────────────────────── */
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #838184;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.iconBtn:hover {
+  color: #cf6a4c;
+  background: rgba(207, 106, 76, 0.1);
+}
+
+.typesBtn:hover {
+  color: #9b859d !important;
+  background: rgba(155, 133, 157, 0.1) !important;
+}
+.typesBtnActive {
+  color: #9b859d !important;
+  background: rgba(155, 133, 157, 0.15) !important;
+}
+
+/* ── Timeline scroll container ───────────────────────────────────── */
+.timeline {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.25) transparent;
+}
+.timeline::-webkit-scrollbar {
+  width: 8px;
+}
+.timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+.timeline::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+}
+

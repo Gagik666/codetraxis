@@ -1,0 +1,14 @@
+.pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: hsl(0, 0%, 10.6%);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #a7a7a7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}

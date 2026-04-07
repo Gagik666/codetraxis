@@ -1,0 +1,78 @@
+.wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Панель переключателя фона ─────────────────────────────────────── */
+.bgBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.bgLabel {
+  font-size: 11px;
+  color: #555;
+  margin-right: 2px;
+  user-select: none;
+}
+
+.bgBtn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.bgBtn:hover {
+  border-color: #555;
+}
+
+.bgBtnActive {
+  border-color: #4a9eff !important;
+}
+
+.bgWhite   { background: #ffffff; }
+.bgLight   { background: #f0f0f0; }
+.bgGray    { background: #808080; }
+.bgDark    { background: #1a1a1a; }
+.bgChecker {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #c8c8c8 25%, transparent 25%),
+    linear-gradient(-45deg, #c8c8c8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #c8c8c8 75%),
+    linear-gradient(-45deg, transparent 75%, #c8c8c8 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* ── iframe ────────────────────────────────────────────────────────── */
+.frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  /* фон управляется через --preview-bg, передаётся в srcdoc через атрибут */
+}
+
+.unavailable {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #666;
+  background: #111;
+}

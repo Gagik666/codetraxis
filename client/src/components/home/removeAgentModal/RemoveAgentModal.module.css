@@ -1,0 +1,148 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal {
+  background: #1a1a1a;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  width: 380px;
+  max-width: 92vw;
+  padding: 22px 24px 20px;
+  animation: slideUp 0.18s ease;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.iconWrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e2e2;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: #555;
+  margin-top: 2px;
+}
+
+/* ── Body ── */
+.body {
+  font-size: 13px;
+  color: #777;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: #aaa;
+  background: #111;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ── Error ── */
+.error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #f87171;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  background: rgba(248, 113, 113, 0.07);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 7px;
+}
+
+/* ── Footer ── */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #222;
+}
+
+.btnCancel {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: 7px;
+  border: 1px solid #2e2e2e;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btnCancel:hover:not(:disabled) {
+  border-color: #444;
+  color: #aaa;
+}
+
+.btnCancel:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnRemove {
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 7px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btnRemove:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.btnRemove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
