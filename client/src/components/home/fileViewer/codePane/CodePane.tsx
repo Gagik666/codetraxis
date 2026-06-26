@@ -1,4 +1,4 @@
-import Editor from "@monaco-editor/react";
+import { LazyEditor } from "../../../../helper/editor/LazyEditor";
 import { COLORS } from "../../../../constants/colors/colors";
 import styles from "./CodePane.module.css";
 
@@ -18,11 +18,12 @@ export const CodePane = ({
 }: ICodePaneProps) => {
   return (
     <div className={styles.container}>
-      <Editor
+      <LazyEditor
         path={filePath}
         language={language}
         value={content}
         theme="vs-dark"
+        fallbackHeight="100%"
         loading={
           <div className={styles.loading} style={{ color: COLORS.secondaryText }}>
             Загрузка редактора...

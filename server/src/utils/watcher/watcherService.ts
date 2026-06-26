@@ -81,9 +81,21 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
   });
 
   const watcher = chokidar.watch(targetDir, {
-    ignored: makeGitignoreWatcher(targetDir), // теперь watcher учитывает .gitignore и ALWAYS_IGNORE
+    ignored: (filePath: string) => {
+      // Всегда игнорируем Unix-сокеты и системные файлы — chokidar не умеет их watchить
+      if (
+        filePath.endsWith(".sock") ||
+        filePath.endsWith(".socket") ||
+        /com\.apple\.launchd\./i.test(filePath) ||
+        filePath.includes("Visual Studio Code-")
+      ) {
+        return true;
+      }
+      return makeGitignoreWatcher(targetDir)(filePath);
+    },
     ignoreInitial: true,
     persistent: true,
+    ignorePermissionErrors: true,
     usePolling: false,
     depth: 10,
     awaitWriteFinish: {
@@ -116,7 +128,12 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
     .on("unlink", onStructure)
     .on("unlinkDir", onStructure)
     .on("change", onChange)
-    .on("error", (err) => console.error("❌ Watcher error:", err))
+    .on("error", (err: unknown) => {
+      // UNKNOWN — это системные сокеты / .sock файлы — chokidar не умеет их watchить, тихо игнорируем
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === "UNKNOWN" || e.code === "ENOENT") return;
+      console.error("❌ Watcher error:", err);
+    })
     .on("ready", () =>
       console.log(`👀 Watching: ${targetDir}`)
     );

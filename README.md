@@ -1,37 +1,83 @@
 # codetraxis
 
-A developer tool that runs alongside any project and gives you a **live file tree**, **code viewer**, and a **debug panel** — all in the browser on a single port.
+**A local DevTools alternative for any JavaScript project.**
+
+Tired of jumping between DevTools tabs, losing console logs, and not seeing the full network flow?
+
+`codetraxis` gives you a **file explorer**, **network inspector**, and **console timeline** — all in one browser UI, running completely on localhost.
+
+```bash
+npx codetraxis .
+```
+
+Open **http://localhost:3333** — that's it.
 
 ---
 
-## How it works
+## Why codetraxis?
 
-```
-Your project (Expo / React Native / Next.js / etc.)
-        │  imports codetraxisAgent  (auto-injected)
-        │  sends events over WebSocket
-        ▼
-  codetraxis server  (Express + WS, port 3333)
-        │  serves client/dist as static files
-        │  exposes REST API + WebSocket endpoints
-        ▼
-     Browser  →  http://localhost:3333
-        │  shows file tree, code viewer, debug timeline
-```
+| Problem | codetraxis |
+|---|---|
+| Switching between DevTools tabs | Everything in one UI |
+| Console logs disappearing on refresh | Persistent timeline |
+| Can't track full request lifecycle | Request + response + headers + duration |
+| No file tree in DevTools | Built-in live project explorer |
+| Hard to debug React Native / Expo | Works over WebSocket — no browser required |
+
+---
+
+## Features
+
+| | Feature | Description |
+|---|---|---|
+| 📁 | **Live file tree** | Browse your project in real time — respects `.gitignore` |
+| 🧾 | **Code viewer** | Monaco-based syntax-highlighted file viewer |
+| 🌐 | **Network inspector** | `fetch` / `axios` / `XHR` — method, URL, status, body, headers, duration |
+| 🧠 | **Console timeline** | `log` / `info` / `warn` / `error` — persistent, in order |
+| ⚡ | **Real-time updates** | File changes pushed via WebSocket — no refresh needed |
+| 🔌 | **Any project** | React, React Native, Next.js, Expo, Vite, CRA, plain Node |
+| 🔒 | **100% local** | Bound to `127.0.0.1` — no data ever leaves your machine |
 
 ---
 
 ## Quick start
 
 ```bash
-# From the root of the project you want to inspect:
+# No install needed
 npx codetraxis .
 
-# Or if installed globally:
+# Or globally
+npm install -g codetraxis
 codetraxis .
+
+# Point at a specific project
+codetraxis ~/projects/my-app
+
+# Custom port
+PORT=4000 codetraxis .
 ```
 
-Opens **`http://localhost:3333`** automatically — API and UI on a single port.
+Opens **`http://localhost:3333`** automatically.
+
+---
+
+## How it works
+
+```
+Your App  (React / React Native / Next.js / Expo / etc.)
+     │
+     │  codetraxisAgent  ← auto-injected into your entry file
+     │  intercepts: console.* · fetch · axios · XMLHttpRequest
+     │  sends events over WebSocket
+     ▼
+codetraxis server  (Express + WS, 127.0.0.1:3333)
+     │  serves the browser UI as static files
+     │  exposes REST API + WebSocket endpoints
+     │  watches your project for file changes
+     ▼
+Browser  →  http://localhost:3333
+     file tree · code viewer · network inspector · console timeline
+```
 
 ---
 
@@ -41,7 +87,8 @@ Opens **`http://localhost:3333`** automatically — API and UI on a single port.
 |---|---|
 | `[path]` | Target project directory (default: current dir) |
 | `--dev` | Dev mode — starts `ts-node-dev` + Vite dev server separately |
-| `PORT=XXXX` | Override default port 3333 via env var |
+| `--help` | Show usage |
+| `PORT=XXXX` | Override default port `3333` via env var |
 
 If port `3333` is busy, codetraxis automatically finds the next available port.
 
@@ -49,130 +96,22 @@ If `server/dist` is missing, codetraxis runs `npm run build` automatically befor
 
 ---
 
-## Features
+## Debug Agent
 
-| Feature | Description |
-|---|---|
-| **File tree** | Live file tree of the target project, respects `.gitignore` |
-| **Code viewer** | Monaco-based syntax-highlighted file viewer |
-| **Debug panel** | Timeline of network (fetch / XHR / axios) and console events |
-| **TS Types** | Generate TypeScript interfaces from any JSON response |
-| **Agent install** | One-click agent injection into the target project entry file |
-| **Single port** | UI + API served together from `:3333` in production |
-| **WebSocket** | Real-time file-change notifications via chokidar |
+Click **Install Agent** in the UI — codetraxis automatically injects a lightweight agent into your project's entry file.
 
----
+The agent intercepts:
+- `console.log / info / warn / error`
+- `fetch` (web & React Native)
+- `XMLHttpRequest` (axios / RN networking)
 
-## Build & publish
+All events are sent over WebSocket and shown in real time.
 
-```bash
-# Build everything (server TypeScript → JS + Vite client → static)
-npm run build
-
-# Test locally as a real CLI user would
-npm link
-codetraxis /path/to/some-project
-
-# Check what will be published to npm
-npm pack --dry-run
-
-# Publish
-npm publish
-```
-
-### What gets published (`files` in package.json)
-
-```
-bin/          ← CLI entry point
-server/dist/  ← Compiled server JS
-client/dist/  ← Built React app (static)
-```
-
-Source files (`src/`, `tsconfig`, `.env`, `node_modules`) are **never** included.
-
----
-
-## Project structure
-
-```
-bin/
-  cli.js              ← CLI entry: prod → node server/dist/index.js
-                                   dev  → ts-node-dev + vite (--dev flag)
-
-server/               ← Express + WebSocket server (port 3333)
-  src/
-    index.ts          ← HTTP server, mounts routes, serves client/dist, starts watcher
-    routes/
-      tree.route.ts   ← GET /api/tree — returns file tree JSON
-      file.route.ts   ← GET /api/file — returns file content
-      agent.route.ts  ← POST/DELETE /api/agent — install / uninstall agent
-    utils/
-      agent/
-        agentInstaller.ts   ← Generates & injects codetraxisAgent into target project
-        debugHub.ts         ← WebSocket hub: /agent (target) ↔ /debug (viewer)
-      watcher/
-        watcherService.ts   ← chokidar watcher → broadcasts tree_changed / file_changed
-        gitignoreWatcher.ts ← Reloads .gitignore rules on change
-      file/
-        buildTree.ts        ← Builds file tree JSON, respects .gitignore
-        gitignoreLoader.ts  ← Parses .gitignore patterns
-      git/
-        getGitStatus.ts     ← Returns git status for tree decorations
-  dist/                 ← Compiled output (after npm run build:server)
-
-client/               ← React + Vite SPA
-  src/
-    pages/home/
-      Home.tsx              ← Root layout: LeftMenu + LeftContentTree + FileViewer + DebugPanel
-    components/home/
-      leftMenu/             ← Icon sidebar (File tree / Debug)
-      leftContentTree/      ← File tree panel
-      treeItem/             ← Single tree node (file / folder)
-      fileViewer/           ← File content area (Monaco + preview)
-      debugPanel/
-        DebugPanel.tsx      ← Timeline (network, console events)
-        components/
-          TypesPanel/       ← Generate TS interfaces from JSON
-          NetworkExpanded/  ← Expanded network event view
-          ConsoleExpanded/  ← Expanded console event view
-      topMenu/              ← Top bar with project path + agent controls
-      addAgentModal/        ← Agent install modal
-      removeAgentModal/     ← Agent uninstall modal
-    redux/
-      treeSlice/            ← File tree state
-      fileSlice/            ← Open file state
-      debugSlice/
-        DebugSlice.ts       ← Debug events (max 500, upsert by id)
-        types.ts            ← ConsoleEvent / NetworkEvent
-    hooks/
-      useDebugSocket.ts     ← ws://host:3333/debug → dispatches events to Redux
-      useProjectWatcher.ts  ← ws://host:3333/ws → reloads tree on change
-    axios/
-      agent/agentApi.ts     ← installAgent / removeAgent / getAgentStatus
-      tree/treeService.ts   ← fetchTree / fetchFile
-  dist/                 ← Built static files (after npm run build:client)
-```
-
----
-
-## Debug Agent (`codetraxisAgent`)
-
-Auto-generated and injected into the target project on "Add Agent" click.
-
-| File | What it does |
-|---|---|
-| `shared.ts` | `createTreeViewerBridge()` — WS connection to `:3333/agent`, send queue, safe serializer |
-| `interceptors/consoleInterceptor.ts` | Patches `console.log / warn / error / info` |
-| `interceptors/fetchInterceptor.ts` | Patches `globalThis.fetch` |
-| `interceptors/xhrInterceptor.ts` | Patches `XMLHttpRequest` (React Native / axios) |
-| `index.ts` | Wires everything, exports `attachAxios(instance)` |
-
-### Manual axios attachment (optional)
+**Manual axios attachment** (for `axios.create()` instances):
 
 ```ts
 import { attachAxios } from "./codetraxisAgent";
 
-// for axios.create() instances:
 attachAxios(myAxiosInstance);
 ```
 
@@ -189,20 +128,118 @@ NetworkEvent   { type: "network", transport: "fetch"|"xhr"|"axios",
 
 ---
 
-## WebSocket endpoints (server :3333)
+## WebSocket endpoints
 
 | Path | Purpose |
 |---|---|
-| `/agent` | Target project agent sends events here |
+| `/agent` | Target app agent sends events here |
 | `/debug` | Browser viewer receives relayed events |
-| `/ws` | File watcher — sends `tree_changed` / `file_changed` |
+| `/ws` | File watcher — `tree_changed` / `file_changed` |
 
 ---
 
-## Common errors
+## Security
 
-| Error | Fix |
+codetraxis runs **fully locally** — no data ever leaves your machine.
+
+| What | Detail |
 |---|---|
+| Server bind | `127.0.0.1` only — not reachable from other machines |
+| CORS | Localhost origins only — external origins are blocked |
+| File access | Only within the directory you pass as argument |
+| On install | Nothing runs — no `postinstall` script |
+| Telemetry | None. Zero. |
+
+---
+
+## Common issues
+
+| Issue | Fix |
+|---|---|
+| White screen in browser | Run `npm run build` — `client/dist` is missing |
 | `Cannot find module server/dist/index.js` | Run `npm run build` first |
-| White screen in browser | Run `npm run build:client` — `client/dist` is missing |
-| `Permission denied` on CLI | Run `chmod +x bin/cli.js` |
+| Port already in use | codetraxis auto-picks the next free port |
+| Permission denied on CLI | `chmod +x bin/cli.js` |
+
+---
+
+## Build & develop
+
+```bash
+# Build everything (server TS → JS + Vite → static)
+npm run build
+
+# Test locally as a real user would
+npm link
+codetraxis /path/to/some-project
+
+# Check what gets published
+npm pack --dry-run
+
+# Publish
+npm publish
+```
+
+### What gets published
+
+```
+bin/          ← CLI entry point
+server/dist/  ← Compiled server JS
+client/dist/  ← Built React app (static)
+```
+
+Source files (`src/`, `tsconfig`, `.env`, `node_modules`) are **never** included.
+
+---
+
+## Project structure
+
+```
+bin/
+  cli.js              ← CLI entry point
+
+server/src/
+  index.ts            ← HTTP server, routes, serves client/dist, starts watcher
+  routes/
+    tree.route.ts     ← GET /api/tree
+    file.route.ts     ← GET /api/file
+    agent.route.ts    ← POST/DELETE /api/agent
+  utils/
+    agent/
+      agentInstaller.ts   ← Detects project type, injects codetraxisAgent
+      debugHub.ts         ← WS relay: /agent (target) ↔ /debug (viewer)
+    watcher/
+      watcherService.ts   ← chokidar → broadcasts tree_changed / file_changed
+      gitignoreWatcher.ts ← Reloads .gitignore rules on change
+    file/
+      buildTree.ts        ← File tree JSON, respects .gitignore
+      gitignoreLoader.ts  ← Parses .gitignore patterns
+    git/
+      getGitStatus.ts     ← Git status decorations
+
+client/src/
+  pages/home/Home.tsx         ← Root layout
+  components/home/
+    leftMenu/                 ← Icon sidebar
+    leftContentTree/          ← File tree panel
+    fileViewer/               ← Monaco code viewer + preview
+    debugPanel/               ← Network & console timeline
+      components/
+        TypesPanel/           ← Generate TS interfaces from JSON responses
+        NetworkExpanded/      ← Expanded network event view
+        ConsoleExpanded/      ← Expanded console event view
+    topMenu/                  ← Project path + agent controls
+    addAgentModal/            ← Agent install modal
+    removeAgentModal/         ← Agent uninstall modal
+  redux/
+    treeSlice/                ← File tree state
+    fileSlice/                ← Open file state
+    debugSlice/               ← Debug events (max 500, upsert by id)
+  hooks/
+    useDebugSocket.ts         ← ws://host/debug → Redux
+    useProjectWatcher.ts      ← ws://host/ws → reload tree
+```
+
+---
+
+*Built because `console.log` debugging gets old fast.*

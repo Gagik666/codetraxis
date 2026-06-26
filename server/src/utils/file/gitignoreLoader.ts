@@ -3,7 +3,14 @@ import path from "node:path";
 import ignore from "ignore";
 
 // Минимальный hardcode — скрывается всегда даже без .gitignore
-const ALWAYS_IGNORE = ["node_modules", ".git"];
+const ALWAYS_IGNORE = [
+  "node_modules",
+  ".git",
+  "**/*.sock",
+  "**/*.socket",
+  "**/com.apple.launchd.*",
+  "**/.DS_Store",
+];
 
 export const loadGitignore = (rootDir: string) => {
     const ig = ignore();

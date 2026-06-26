@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import Editor from "@monaco-editor/react";
+import { LazyEditor } from "../../../../../helper/editor/LazyEditor";
 import { generateTypes } from "../../utils/generateTypes";
 import styles from "./TypesPanel.module.css";
 
@@ -175,12 +175,12 @@ export const TypesPanel = ({ code = "", initialTab = "generated", onClose }: Typ
         {/* Body */}
         {activeTab === "generated" ? (
           <div className={styles.editorWrap}>
-            <Editor
+            <LazyEditor
               language="typescript"
               value={generatedValue}
               theme="vs-dark"
               options={MONACO_OPTIONS}
-              onChange={(val) => setGeneratedValue(val ?? "")}
+              onChange={(val: string | undefined) => setGeneratedValue(val ?? "")}
             />
           </div>
         ) : (
@@ -189,12 +189,12 @@ export const TypesPanel = ({ code = "", initialTab = "generated", onClose }: Typ
             <div className={styles.customSection}>
               <p className={styles.customSectionLabel}>JSON input</p>
               <div className={styles.customEditorWrap}>
-                <Editor
+                <LazyEditor
                   language="json"
                   value={customJson}
                   theme="vs-dark"
                   options={MONACO_OPTIONS}
-                  onChange={(val) => {
+                  onChange={(val: string | undefined) => {
                     setCustomJson(val ?? "");
                     setCustomError(null);
                   }}
@@ -219,12 +219,12 @@ export const TypesPanel = ({ code = "", initialTab = "generated", onClose }: Typ
               <div className={styles.customSection}>
                 <p className={styles.customSectionLabel}>Result</p>
                 <div className={styles.customEditorWrap}>
-                  <Editor
+                  <LazyEditor
                     language="typescript"
                     value={customResult}
                     theme="vs-dark"
                     options={MONACO_OPTIONS}
-                    onChange={(val) => setCustomResult(val ?? "")}
+                    onChange={(val: string | undefined) => setCustomResult(val ?? "")}
                   />
                 </div>
               </div>

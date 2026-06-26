@@ -34,14 +34,22 @@ app.use("/api/agent", agentRoute);
 
 // ── Serve built client (production mode) ──────────────────────────────────────
 // __dirname в CommonJS = server/dist, поэтому ../../client/dist
-const clientDist = path.join(__dirname, '../../client/dist');
+const clientDist = path.resolve(__dirname, '../../client/dist');
+const clientIndex = path.join(clientDist, 'index.html');
+
 if (fs.existsSync(clientDist)) {
     app.use(express.static(clientDist));
-    // SPA fallback — всё остальное отдаём index.html
-    app.get('/{*path}', (_req, res) => {
-        res.sendFile(path.join(clientDist, 'index.html'));
-    });
 }
+
+// SPA fallback — всё остальное (не /api/*) отдаём index.html
+app.get('/{*path}', (_req, res) => {
+    if (!fs.existsSync(clientIndex)) {
+        res.status(503).send('Client not built. Run: npm run build:client');
+        return;
+    }
+    // Используем { root } — это единственный надёжный способ в Express 4/5
+    res.sendFile('index.html', { root: clientDist });
+});
 
 // Создаём HTTP-сервер вручную чтобы подцепить WebSocket на тот же порт
 const httpServer = http.createServer(app);

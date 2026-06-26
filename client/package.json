@@ -1,5 +1,5 @@
 {
-  "name": "tree_viewer",
+  "name": "codetraxis-client",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,23 +11,18 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.29.2",
-    "@microlink/react-json-view": "^1.31.16",
     "@monaco-editor/react": "^4.7.0",
     "@reduxjs/toolkit": "^2.11.2",
-    "@uiw/react-json-view": "^2.0.0-alpha.41",
+    "@uiw/react-json-view": "2.0.0-alpha.41",
     "axios": "^1.13.6",
-    "lottie-react": "^2.4.1",
     "monaco-editor": "^0.55.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-json-view-lite": "^2.5.0",
-    "react-native-svg": "^15.15.4",
     "react-redux": "^9.2.0",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.14.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@types/babel__standalone": "^7.1.9",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

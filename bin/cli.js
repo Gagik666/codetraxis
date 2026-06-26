@@ -20,9 +20,39 @@ const c = {
 // ── Args ──────────────────────────────────────────────────────────────────────
 const args      = process.argv.slice(2);
 const devMode   = args.includes('--dev');
+const showHelp  = args.includes('--help') || args.includes('-h');
 const targetArg = args.find(a => !a.startsWith('-'));
 const ROOT      = targetArg ? path.resolve(targetArg) : process.cwd();
 const PORT      = parseInt(process.env.PORT || '3333', 10);
+
+// ── Validate target dir ───────────────────────────────────────────────────────
+if (showHelp) {
+  process.stdout.write([
+    '',
+    `  ${c.cyan}${c.bold}codetraxis${c.reset}  — live file tree, code viewer & debug panel`,
+    '',
+    `  ${c.bold}Usage${c.reset}`,
+    `    codetraxis [path]          start for the given project directory`,
+    `    codetraxis .               start for the current directory`,
+    `    codetraxis --dev           start in development mode`,
+    `    codetraxis --help          show this help`,
+    '',
+    `  ${c.bold}Env vars${c.reset}`,
+    `    PORT=4444 codetraxis .     override default port (3333)`,
+    '',
+    `  ${c.bold}Examples${c.reset}`,
+    `    npx codetraxis .`,
+    `    npx codetraxis ~/projects/my-app`,
+    `    PORT=4000 codetraxis .`,
+    '',
+  ].join('\n') + '\n');
+  process.exit(0);
+}
+
+if (!fs.existsSync(ROOT)) {
+  process.stderr.write(`\n  ${c.red}✗${c.reset}  Directory not found: ${ROOT}\n\n`);
+  process.exit(1);
+}
 
 // ── Print header ──────────────────────────────────────────────────────────────
 function printHeader(port) {
@@ -66,7 +96,8 @@ async function startProd() {
   const distEntry = path.join(__dirname, '../server/dist/index.js');
 
   if (!fs.existsSync(distEntry)) {
-    process.stdout.write(`  ${c.yellow}↳${c.reset}  no dist found — building...\n\n`);
+    process.stdout.write(`  ${c.yellow}↳${c.reset}  first run — building codetraxis...\n`);
+    process.stdout.write(`  ${c.dim}  (this only happens once)${c.reset}\n\n`);
     try {
       execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
       process.stdout.write('\n');

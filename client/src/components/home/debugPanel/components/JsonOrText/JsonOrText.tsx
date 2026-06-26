@@ -33,7 +33,7 @@ export const JsonOrText = ({ value }: { value: unknown }) => {
             "--w-rjv-background-color": "transparent",
           } as React.CSSProperties
         }
-        collapsed={1}
+        collapsed={true}
         displayDataTypes={false}
         displayObjectSize
         enableClipboard

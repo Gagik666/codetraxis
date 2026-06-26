@@ -1,5 +1,9 @@
 # ===== Dependencies =====
 node_modules/
+server/src/
+client/src/
+dist/
+.env
 
 # ===== Environment / Secrets =====
 .env

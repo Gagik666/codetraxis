@@ -68,8 +68,9 @@ export async function detectProjectKind(targetDir: string): Promise<ProjectKind>
   if (deps["next"]) return "nextjs";
   if (deps["expo"] || deps["@expo/cli"] || deps["expo-router"]) return "expo";
   if (deps["react-native"] && !deps["expo"]) return "react-native";
-  if (deps["vite"] || deps["@vitejs/plugin-react"] || deps["@vitejs/plugin-react-swc"]) return "vite-react";
+  // react-scripts takes priority over vite (project may have both)
   if (deps["react-scripts"]) return "cra-react";
+  if (deps["vite"] || deps["@vitejs/plugin-react"] || deps["@vitejs/plugin-react-swc"]) return "vite-react";
   if (deps["webpack"] || deps["@webpack-cli/generators"]) return "webpack-react";
   if (await fileExists(path.join(targetDir, "index.html")) && !deps["react"]) return "plain-web";
   if (deps["react"]) return "webpack-react";
@@ -129,6 +130,7 @@ async function scanDirForPattern(
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function resolveVitePlan(targetDir: string): Promise<InstallStrategy> {
+  // 1. Try to find <script type="module" src="..."> in index.html
   for (const htmlPath of ["index.html", "public/index.html"]) {
     const htmlFile = path.join(targetDir, htmlPath);
     if (!(await fileExists(htmlFile))) continue;
@@ -145,15 +147,25 @@ async function resolveVitePlan(targetDir: string): Promise<InstallStrategy> {
           reason: `Vite: index.html <script type="module" src="${match[1]}">` };
       }
     }
-    // index.html exists but no module script → HTML patch
-    return { strategy: "patch-html", htmlFile, scriptSrc: "/codetraxisAgent.js",
-      confidence: 0.6, reason: "Vite: index.html found, no module entry detected" };
   }
 
-  // Fallback: semantic scan
+  // 2. Semantic scan — look for createRoot / ReactDOM.render in JS/JSX/TS/TSX
   const found = await scanDirForPattern(targetDir, WEB_BOOTSTRAP_PATTERNS);
   if (found) return { strategy: "inject-import", targetFile: found.file, confidence: found.confidence,
-    reason: `Vite fallback: ${found.reason}` };
+    reason: `Vite semantic: ${found.reason}` };
+
+  // 3. Well-known candidate filenames
+  const found2 = await resolveCandidateFallback(targetDir);
+  if (found2.strategy === "inject-import") return { ...found2, reason: `Vite candidate: ${found2.reason}` };
+
+  // 4. Last resort — patch index.html if it exists
+  for (const htmlPath of ["index.html", "public/index.html"]) {
+    const htmlFile = path.join(targetDir, htmlPath);
+    if (await fileExists(htmlFile)) {
+      return { strategy: "patch-html", htmlFile, scriptSrc: "/codetraxisAgent.js",
+        confidence: 0.5, reason: "Vite: index.html found, no JS entry detected" };
+    }
+  }
 
   return { strategy: "manual", reason: "Vite project: no entry file found" };
 }
@@ -416,9 +428,29 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
     }
 
     if (plan.strategy === "patch-html") {
+      const publicDir  = path.dirname(plan.htmlFile);
+      const bundleFile = path.join(publicDir, "codetraxisAgent.js");
+      const port       = process.env.PORT ?? "3333";
+
+      // Check if already installed
+      const htmlSource     = await fs.readFile(plan.htmlFile, "utf-8");
+      const alreadyInstalled = htmlSource.includes("codetraxisAgent.js");
+
+      // Always overwrite the bundle so it stays up-to-date
+      await fs.writeFile(bundleFile, buildHtmlAgentBundle(port), "utf-8");
+
+      // Patch index.html only if not already patched
+      if (!alreadyInstalled) {
+        await fs.writeFile(plan.htmlFile, patchHtmlFile(htmlSource, plan.scriptSrc), "utf-8");
+      }
+
       return {
-        success: false, alreadyInstalled: false, projectKind: kind, strategy: "patch-html",
-        error: `HTML patching not yet supported. Add <script src="${plan.scriptSrc}"> manually to ${plan.htmlFile}`,
+        success: true,
+        alreadyInstalled,
+        entryFile: plan.htmlFile,
+        agentFile: bundleFile,
+        projectKind: kind,
+        strategy: "patch-html",
       };
     }
 
@@ -432,7 +464,14 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
       // expo-router: entry is in app/ — put agent at project root instead
       ? targetDir
       : path.dirname(targetFile);
-    const agentFile  = path.join(agentDir, "codetraxisAgent", "index.ts");
+
+    // Use .js extension for plain JS projects (webpack / CRA without TS)
+    // so webpack can resolve ./codetraxisAgent without a TypeScript loader.
+    const entryExt  = path.extname(targetFile); // .js | .jsx | .ts | .tsx
+    const useJs     = entryExt === ".js" || entryExt === ".jsx";
+    const agentIndexExt = useJs ? "js" : "ts";
+
+    const agentFile  = path.join(agentDir, "codetraxisAgent", `index.${agentIndexExt}`);
 
     // Import path from the entry file to the agent folder's index
     let agentImportPath = AGENT_IMPORT_MARKER; // default: "./codetraxisAgent"
@@ -446,7 +485,7 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
     const alreadyInstalled = entrySource.includes("codetraxisAgent");
 
     // Always overwrite the agent folder so the latest version is always present.
-    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", kind);
+    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", kind, useJs);
 
     // Only inject the import if it's not there yet.
     if (!alreadyInstalled) {
@@ -466,7 +505,9 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
 
 export async function findEntryFile(targetDir: string): Promise<string | null> {
   const { plan } = await buildInstallPlan(targetDir);
-  return plan.strategy === "inject-import" ? plan.targetFile : null;
+  if (plan.strategy === "inject-import") return plan.targetFile;
+  if (plan.strategy === "patch-html")    return plan.htmlFile;
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -482,7 +523,33 @@ export interface RemoveResult {
 
 export async function removeAgent(targetDir: string): Promise<RemoveResult> {
   try {
-    const entryFile = await findEntryFile(targetDir);
+    const { plan } = await buildInstallPlan(targetDir);
+
+    // ── patch-html case ───────────────────────────────────────────────────────
+    if (plan.strategy === "patch-html") {
+      const publicDir  = path.dirname(plan.htmlFile);
+      const bundleFile = path.join(publicDir, "codetraxisAgent.js");
+
+      // Remove <script> tag from index.html
+      const htmlSource = await fs.readFile(plan.htmlFile, "utf-8");
+      if (htmlSource.includes("codetraxisAgent.js")) {
+        const cleaned = htmlSource
+          .split("\n")
+          .filter(line => !line.includes("codetraxisAgent.js"))
+          .join("\n");
+        await fs.writeFile(plan.htmlFile, cleaned, "utf-8");
+      }
+
+      // Remove the bundle file
+      if (await fileExists(bundleFile)) {
+        await fs.unlink(bundleFile);
+      }
+
+      return { success: true, entryFile: plan.htmlFile, agentFile: bundleFile };
+    }
+
+    // ── inject-import case ────────────────────────────────────────────────────
+    const entryFile = plan.strategy === "inject-import" ? plan.targetFile : null;
 
     if (!entryFile) {
       return { success: false, error: "Entry file not found" };
@@ -539,6 +606,219 @@ export async function removeAgent(targetDir: string): Promise<RemoveResult> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HTML patching helpers (for CRA / plain-web projects with public/index.html)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Insert <script src="..."> just before </body> (or </head> as fallback). */
+function patchHtmlFile(html: string, scriptSrc: string): string {
+  const tag = `<script src="${scriptSrc}"></script>`;
+  if (html.includes(tag)) return html; // idempotent
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `  ${tag}\n</body>`);
+  }
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `  ${tag}\n</head>`);
+  }
+  // No recognisable tags — just append
+  return html + `\n${tag}\n`;
+}
+
+/** Build a self-contained IIFE bundle (no import/export) for injection via <script>. */
+function buildHtmlAgentBundle(serverPort: string): string {
+  // We inline shared + interceptors as one IIFE so it works in any plain HTML page
+  // without a bundler or module system.
+  return `/**
+ * codetraxis debug agent — standalone bundle (auto-generated, do not edit).
+ * Injected into public/index.html via <script src="/codetraxisAgent.js">.
+ */
+(function () {
+  'use strict';
+
+  // ─── bridge ────────────────────────────────────────────────────────────────
+  var PORT = '${serverPort}';
+  var WS_URL = 'ws://localhost:' + PORT + '/agent';
+  var MAX_LEN = 20000;
+  var _ws = null;
+  var _queue = [];
+  var _reconnectTimer = null;
+
+  function connect() {
+    try {
+      _ws = new WebSocket(WS_URL);
+      _ws.onopen = function () {
+        var q = _queue.splice(0);
+        for (var i = 0; i < q.length; i++) _ws.send(q[i]);
+      };
+      _ws.onclose = function () {
+        _ws = null;
+        if (!_reconnectTimer) {
+          _reconnectTimer = setTimeout(function () { _reconnectTimer = null; connect(); }, 3000);
+        }
+      };
+      _ws.onerror = function () { /* suppress */ };
+    } catch (e) { /* WebSocket not available */ }
+  }
+
+  connect();
+
+  var _uid = 0;
+  function uid() { return 'h' + (++_uid) + '_' + Date.now(); }
+
+  function truncate(s) {
+    if (typeof s !== 'string') return s;
+    return s.length > MAX_LEN ? s.slice(0, MAX_LEN) + '…[truncated]' : s;
+  }
+
+  function safeSerialize(v) {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v === 'string') return truncate(v);
+    try { return truncate(JSON.stringify(v)); } catch { return '[unserializable]'; }
+  }
+
+  function send(msg) {
+    try {
+      var s = JSON.stringify(msg);
+      if (_ws && _ws.readyState === 1 /* OPEN */) {
+        _ws.send(s);
+      } else {
+        _queue.push(s);
+      }
+    } catch { /* ignore */ }
+  }
+
+  var bridge = { uid: uid, truncate: truncate, safeSerialize: safeSerialize, send: send };
+
+  // ─── console interceptor ───────────────────────────────────────────────────
+  var LEVELS = ['log', 'warn', 'error', 'info', 'debug'];
+  LEVELS.forEach(function (level) {
+    var orig = console[level].bind(console);
+    console[level] = function () {
+      orig.apply(console, arguments);
+      try {
+        var args = Array.prototype.slice.call(arguments);
+        bridge.send({
+          id: bridge.uid(), type: 'console', level: level, timestamp: Date.now(),
+          args: args.map(function (a) { return bridge.safeSerialize(a); }),
+        });
+      } catch { /* ignore */ }
+    };
+  });
+
+  // ─── fetch interceptor ─────────────────────────────────────────────────────
+  if (typeof fetch !== 'undefined') {
+    var _origFetch = fetch;
+    fetch = function (input, init) {
+      var id    = bridge.uid();
+      var start = Date.now();
+      var method  = (init && init.method ? init.method : 'GET').toUpperCase();
+      var url     = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input.url || String(input));
+      var reqBody = init && init.body != null ? bridge.truncate(String(init.body)) : undefined;
+      var reqHeaders;
+      try {
+        if (init && init.headers) {
+          reqHeaders = {};
+          var h = new Headers(init.headers);
+          h.forEach(function (v, k) { reqHeaders[k] = v; });
+        }
+      } catch { /* ignore */ }
+
+      bridge.send({ id: id, type: 'network', transport: 'fetch', method: method, url: url,
+        requestBody: reqBody, requestHeaders: reqHeaders, state: 'pending', timestamp: start });
+
+      return _origFetch.call(this, input, init).then(function (response) {
+        var cloned = response.clone();
+        var resHeaders = {};
+        try { response.headers.forEach(function (v, k) { resHeaders[k] = v; }); } catch { /* ignore */ }
+        cloned.text().then(function (body) {
+          bridge.send({ id: id, type: 'network', transport: 'fetch', method: method, url: url,
+            status: response.status, requestBody: reqBody, requestHeaders: reqHeaders,
+            responseBody: bridge.truncate(body), responseHeaders: resHeaders,
+            state: response.ok ? 'success' : 'error',
+            duration: Date.now() - start, timestamp: start });
+        }).catch(function () {
+          bridge.send({ id: id, type: 'network', transport: 'fetch', method: method, url: url,
+            status: response.status, requestBody: reqBody, requestHeaders: reqHeaders,
+            responseHeaders: resHeaders,
+            state: response.ok ? 'success' : 'error',
+            duration: Date.now() - start, timestamp: start });
+        });
+        return response;
+      }).catch(function (err) {
+        bridge.send({ id: id, type: 'network', transport: 'fetch', method: method, url: url,
+          requestBody: reqBody, requestHeaders: reqHeaders,
+          state: 'error', duration: Date.now() - start, timestamp: start });
+        throw err;
+      });
+    };
+  }
+
+  // ─── XHR interceptor ──────────────────────────────────────────────────────
+  try {
+    var proto = XMLHttpRequest.prototype;
+    var _origOpen = proto.open;
+    proto.open = function (method, url) {
+      this.__tv_method = method.toUpperCase();
+      this.__tv_url    = String(url);
+      return _origOpen.apply(this, arguments);
+    };
+    var _origSetHeader = proto.setRequestHeader;
+    proto.setRequestHeader = function (name, value) {
+      if (!this.__tv_reqHeaders) this.__tv_reqHeaders = {};
+      this.__tv_reqHeaders[name] = value;
+      return _origSetHeader.apply(this, arguments);
+    };
+    var _origSend = proto.send;
+    proto.send = function (body) {
+      var self     = this;
+      var id       = bridge.uid();
+      var method   = this.__tv_method  || 'GET';
+      var url      = this.__tv_url     || '';
+      var reqHeaders = this.__tv_reqHeaders;
+      var start    = Date.now();
+      var reqBody;
+      if (body != null) {
+        try {
+          reqBody = typeof body === 'string' ? bridge.truncate(body)
+            : body instanceof URLSearchParams ? bridge.truncate(body.toString())
+            : '[binary]';
+        } catch { /* ignore */ }
+      }
+      bridge.send({ id: id, type: 'network', transport: 'xhr', method: method, url: url,
+        requestBody: reqBody, requestHeaders: reqHeaders, state: 'pending', timestamp: start });
+
+      this.addEventListener('load', function () {
+        var resBody, resHeaders;
+        try { resBody = bridge.truncate(self.responseText); } catch { /* binary */ }
+        try {
+          var raw = self.getAllResponseHeaders();
+          if (raw) {
+            resHeaders = {};
+            raw.trim().split(/\r?\n/).forEach(function (line) {
+              var idx = line.indexOf(': ');
+              if (idx > 0) resHeaders[line.slice(0, idx).toLowerCase()] = line.slice(idx + 2);
+            });
+          }
+        } catch { /* ignore */ }
+        bridge.send({ id: id, type: 'network', transport: 'xhr', method: method, url: url,
+          status: self.status, requestBody: reqBody, requestHeaders: reqHeaders,
+          responseBody: resBody, responseHeaders: resHeaders,
+          state: self.status >= 200 && self.status < 400 ? 'success' : 'error',
+          duration: Date.now() - start, timestamp: start });
+      });
+      this.addEventListener('error', function () {
+        bridge.send({ id: id, type: 'network', transport: 'xhr', method: method, url: url,
+          requestBody: reqBody, requestHeaders: reqHeaders,
+          state: 'error', duration: Date.now() - start, timestamp: start });
+      });
+      return _origSend.apply(this, arguments);
+    };
+  } catch (e) { /* XHR not available */ }
+
+})();
+`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Agent source — modular architecture
 //
 // Generates a codetraxisAgent/ folder with:
@@ -549,22 +829,138 @@ export async function removeAgent(targetDir: string): Promise<RemoveResult> {
 //   index.ts                        — wires everything together
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function writeAgentFiles(agentParentDir: string, serverPort: string, kind: ProjectKind): Promise<void> {
+async function writeAgentFiles(agentParentDir: string, serverPort: string, kind: ProjectKind, useJs = false): Promise<void> {
   const agentDir         = path.join(agentParentDir, "codetraxisAgent");
   const interceptorsDir  = path.join(agentDir, "interceptors");
+  const ext              = useJs ? "js" : "ts";
 
+  // Always wipe the old agent folder first so stale .ts/.js files don't coexist
+  await fs.rm(agentDir, { recursive: true, force: true });
   await fs.mkdir(interceptorsDir, { recursive: true });
 
-  await fs.writeFile(path.join(agentDir, "shared.ts"),                              buildSharedSource(serverPort),       "utf-8");
-  await fs.writeFile(path.join(interceptorsDir, "consoleInterceptor.ts"),           buildConsoleInterceptorSource(),     "utf-8");
-  await fs.writeFile(path.join(interceptorsDir, "fetchInterceptor.ts"),             buildFetchInterceptorSource(),       "utf-8");
-  await fs.writeFile(path.join(interceptorsDir, "xhrInterceptor.ts"),               buildXhrInterceptorSource(),         "utf-8");
-  await fs.writeFile(path.join(agentDir, "index.ts"),                               buildAgentIndexSource(kind),         "utf-8");
+  await fs.writeFile(path.join(agentDir,         `shared.${ext}`),               buildSharedSource(serverPort, useJs),              "utf-8");
+  await fs.writeFile(path.join(interceptorsDir,  `consoleInterceptor.${ext}`),   buildConsoleInterceptorSource(useJs),             "utf-8");
+  await fs.writeFile(path.join(interceptorsDir,  `fetchInterceptor.${ext}`),     buildFetchInterceptorSource(useJs),               "utf-8");
+  await fs.writeFile(path.join(interceptorsDir,  `xhrInterceptor.${ext}`),       buildXhrInterceptorSource(useJs),                 "utf-8");
+  await fs.writeFile(path.join(agentDir,         `index.${ext}`),                buildAgentIndexSource(kind, serverPort, useJs),   "utf-8");
 }
 
-// ─── shared.ts ────────────────────────────────────────────────────────────────
+// ─── Strip TypeScript annotations for plain JS projects ──────────────────────
+// Removes: import type ..., : Type, <Type>, as Type, interface ..., export type ...
+// Keeps the runtime logic intact so webpack/babel can process it without ts-loader.
 
-function buildSharedSource(serverPort: string): string {
+function stripTypescript(src: string): string {
+  return src
+    // remove `import type { ... } from "..."` lines
+    .replace(/^import type\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/gm, "")
+    // remove `export type ...` and `export interface ...` blocks (single or multi-line)
+    .replace(/^export\s+(?:type|interface)\s+\w+[^{]*\{[^}]*\};?\s*$/gm, "")
+    .replace(/^export\s+(?:type|interface)\s+[^=\n]+=[^;\n]+;?\s*$/gm, "")
+    // remove `interface Foo { ... }` blocks
+    .replace(/^interface\s+\w+[^{]*\{[\s\S]*?\}\s*$/gm, "")
+    // remove inline type annotations: `: string`, `: boolean`, `: number`, `: void`, `: unknown`, `: any`, `: never`
+    .replace(/:\s*(string|number|boolean|void|unknown|any|never|null|undefined)\b/g, "")
+    // remove `: SomeInterface` / `: Record<...>` / `: Array<...>` etc. (complex types)
+    .replace(/:\s*[A-Z][A-Za-z0-9_]*(?:<[^>]*>)?/g, "")
+    // remove `as SomeType` casts
+    .replace(/\bas\s+[A-Za-z][A-Za-z0-9_<>, |&[\]]*(?=\s*[),;\]}])/g, "")
+    // remove `<Type>` generic parameters in function calls / declarations (simple)
+    .replace(/<[A-Z][A-Za-z0-9_, ]*>/g, "")
+    // clean up resulting double spaces / empty lines
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd() + "\n";
+}
+
+// ─── shared.ts / shared.js ───────────────────────────────────────────────────
+
+function buildSharedSource(serverPort: string, useJs = false): string {
+  if (useJs) {
+    return `/**
+ * codetraxis agent — shared bridge (auto-generated, do not edit).
+ */
+
+export function createTreeViewerBridge(serverPort) {
+  const g = globalThis;
+
+  const isWeb =
+    typeof g.document !== "undefined" &&
+    typeof g.addEventListener === "function";
+
+  let ws = null;
+  let wsReady = false;
+  const queue = [];
+
+  const getHost = () => {
+    if (typeof g.__TREE_VIEWER_HOST__ === "string" && g.__TREE_VIEWER_HOST__) {
+      return g.__TREE_VIEWER_HOST__;
+    }
+    if (isWeb && g.location?.hostname) return g.location.hostname;
+    return "localhost";
+  };
+
+  const connect = () => {
+    try {
+      const WS = typeof WebSocket !== "undefined" ? WebSocket : g.WebSocket;
+      if (!WS) return;
+
+      ws = new WS(\`ws://\${getHost()}:${serverPort}/agent\`);
+      ws.onopen  = () => {
+        wsReady = true;
+        while (queue.length > 0) {
+          const item = queue.shift();
+          if (item && ws) ws.send(item);
+        }
+      };
+      ws.onclose = () => { wsReady = false; setTimeout(connect, 3000); };
+      ws.onerror = () => { wsReady = false; };
+    } catch { /* unavailable */ }
+  };
+  connect();
+
+  const truncate = (value, max = 500000) =>
+    value.length > max ? \`\${value.slice(0, max)}…[truncated]\` : value;
+
+  const safeSerialize = (value, depth = 0) => {
+    if (depth > 4)                   return "[depth limit]";
+    if (value == null)               return value;
+    if (typeof value === "function") return \`[Function: \${value.name || "anonymous"}]\`;
+    if (typeof value === "symbol")   return value.toString();
+    if (typeof value !== "object")   return value;
+    if (value instanceof Error)      return { __error: true, name: value.name, message: value.message, stack: value.stack };
+    if (Array.isArray(value))        return value.slice(0, 1000).map(i => safeSerialize(i, depth + 1));
+
+    const seen = new WeakSet();
+    const walk = (obj, d) => {
+      if (seen.has(obj)) return "[circular]";
+      seen.add(obj);
+      const r = {};
+      let n = 0;
+      for (const k in obj) {
+        if (n++ > 500) { r["..."] = "[truncated]"; break; }
+        try { r[k] = safeSerialize(obj[k], d + 1); }
+        catch { r[k] = "[unserializable]"; }
+      }
+      return r;
+    };
+    return walk(value, depth);
+  };
+
+  const uid = () =>
+    \`\${Math.random().toString(36).slice(2)}\${Date.now().toString(36)}\`;
+
+  const send = (event) => {
+    try {
+      const payload = JSON.stringify(event);
+      if (wsReady && ws) { ws.send(payload); }
+      else { queue.push(payload); if (queue.length > 200) queue.shift(); }
+    } catch { /* ignore */ }
+  };
+
+  return { send, uid, safeSerialize, truncate, isWeb };
+}
+`;
+  }
+
   return `/**
  * codetraxis agent — shared bridge (auto-generated, do not edit).
  */
@@ -664,9 +1060,44 @@ export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
 `;
 }
 
-// ─── consoleInterceptor.ts ────────────────────────────────────────────────────
+// ─── consoleInterceptor.ts / .js ─────────────────────────────────────────────
 
-function buildConsoleInterceptorSource(): string {
+function buildConsoleInterceptorSource(useJs = false): string {
+  if (useJs) {
+    return `/**
+ * codetraxis agent — console interceptor (auto-generated, do not edit).
+ */
+
+const INSTALLED_KEY = "__tv_console_installed__";
+
+export function setupConsoleInterceptor(bridge) {
+  const g = globalThis;
+  if (g[INSTALLED_KEY]) return;
+  g[INSTALLED_KEY] = true;
+
+  const original = {
+    log:   console.log.bind(console),
+    info:  console.info.bind(console),
+    warn:  console.warn.bind(console),
+    error: console.error.bind(console),
+  };
+
+  ["log", "info", "warn", "error"].forEach(level => {
+    console[level] = (...args) => {
+      original[level](...args);
+      bridge.send({
+        id: bridge.uid(),
+        type: "console",
+        level,
+        args: args.map(a => bridge.safeSerialize(a)),
+        timestamp: Date.now(),
+      });
+    };
+  });
+}
+`;
+  }
+
   return `/**
  * codetraxis agent — console interceptor (auto-generated, do not edit).
  */
@@ -703,9 +1134,102 @@ export function setupConsoleInterceptor(bridge: TreeViewerBridge): void {
 `;
 }
 
-// ─── fetchInterceptor.ts ──────────────────────────────────────────────────────
+// ─── fetchInterceptor.ts / .js ───────────────────────────────────────────────
 
-function buildFetchInterceptorSource(): string {
+function buildFetchInterceptorSource(useJs = false): string {
+  if (useJs) {
+    return `/**
+ * codetraxis agent — fetch interceptor (auto-generated, do not edit).
+ */
+
+const INSTALLED_KEY = "__tv_fetch_installed__";
+
+function normalizeHeaders(headers) {
+  if (!headers) return undefined;
+  const result = {};
+  try {
+    if (headers instanceof Headers) {
+      headers.forEach((v, k) => { result[k] = v; });
+    } else if (Array.isArray(headers)) {
+      headers.forEach(([k, v]) => { result[k] = v; });
+    } else {
+      Object.assign(result, headers);
+    }
+    return result;
+  } catch { return undefined; }
+}
+
+export function setupFetchInterceptor(bridge) {
+  const g = globalThis;
+  if (g[INSTALLED_KEY]) return;
+  g[INSTALLED_KEY] = true;
+
+  const originalFetch =
+    typeof globalThis.fetch === "function"
+      ? globalThis.fetch.bind(globalThis)
+      : null;
+  if (!originalFetch) return;
+
+  globalThis.fetch = async function tvFetch(input, init) {
+    const url =
+      typeof input === "string" ? input
+      : input instanceof URL   ? input.href
+      : input.url;
+
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const id    = bridge.uid();
+    const start = Date.now();
+
+    const requestHeaders = normalizeHeaders(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+
+    let requestBody;
+    const rawBody = init?.body;
+    if (rawBody != null) {
+      try {
+        requestBody =
+          typeof rawBody === "string"            ? bridge.truncate(rawBody)
+          : rawBody instanceof URLSearchParams   ? bridge.truncate(rawBody.toString())
+          : "[binary]";
+      } catch { requestBody = "[unserializable-body]"; }
+    }
+
+    bridge.send({ id, type: "network", transport: "fetch", method, url,
+      requestHeaders, requestBody, state: "pending", timestamp: start });
+
+    try {
+      const response = await originalFetch(input, init);
+
+      let responseHeaders;
+      try {
+        responseHeaders = {};
+        response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+      } catch { /* ignore */ }
+
+      let responseBody;
+      try { responseBody = bridge.truncate(await response.clone().text()); }
+      catch { responseBody = "[binary]"; }
+
+      bridge.send({ id, type: "network", transport: "fetch", method, url,
+        status: response.status, requestHeaders, requestBody,
+        responseHeaders, responseBody,
+        state: response.ok ? "success" : "error",
+        duration: Date.now() - start, timestamp: start });
+
+      return response;
+    } catch (error) {
+      bridge.send({ id, type: "network", transport: "fetch", method, url,
+        requestHeaders, requestBody, state: "error",
+        duration: Date.now() - start, timestamp: start,
+        error: bridge.safeSerialize(error) });
+      throw error;
+    }
+  };
+}
+`;
+  }
+
   return `/**
  * codetraxis agent — fetch interceptor (auto-generated, do not edit).
  */
@@ -802,9 +1326,97 @@ export function setupFetchInterceptor(bridge: TreeViewerBridge): void {
 `;
 }
 
-// ─── xhrInterceptor.ts ────────────────────────────────────────────────────────
+// ─── xhrInterceptor.ts / .js ─────────────────────────────────────────────────
 
-function buildXhrInterceptorSource(): string {
+function buildXhrInterceptorSource(useJs = false): string {
+  if (useJs) {
+    return `/**
+ * codetraxis agent — XHR interceptor (auto-generated, do not edit).
+ */
+
+const INSTALLED_KEY = "__tv_xhr_installed__";
+
+export function setupXhrInterceptor(bridge) {
+  if (typeof XMLHttpRequest === "undefined") return;
+  const g = globalThis;
+  if (g[INSTALLED_KEY]) return;
+  g[INSTALLED_KEY] = true;
+
+  try {
+    const proto = XMLHttpRequest.prototype;
+
+    const _origOpen = proto.open;
+    proto.open = function(method, url, ...rest) {
+      this.__tv_method     = method.toUpperCase();
+      this.__tv_url        = String(url);
+      this.__tv_reqHeaders = undefined;
+      return _origOpen.apply(this, [method, url, ...rest]);
+    };
+
+    const _origSetHeader = proto.setRequestHeader;
+    proto.setRequestHeader = function(name, value) {
+      if (!this.__tv_reqHeaders) this.__tv_reqHeaders = {};
+      this.__tv_reqHeaders[name] = value;
+      return _origSetHeader.apply(this, [name, value]);
+    };
+
+    const _origSend = proto.send;
+    proto.send = function(body) {
+      const id         = bridge.uid();
+      const method     = this.__tv_method ?? "GET";
+      const url        = this.__tv_url    ?? "";
+      const reqHeaders = this.__tv_reqHeaders;
+      const start      = Date.now();
+
+      let requestBody;
+      if (body != null) {
+        try {
+          requestBody =
+            typeof body === "string"          ? bridge.truncate(body)
+            : body instanceof URLSearchParams ? bridge.truncate(body.toString())
+            : "[binary]";
+        } catch { /* ignore */ }
+      }
+
+      bridge.send({ id, type: "network", transport: "xhr", method, url,
+        requestBody, requestHeaders: reqHeaders, state: "pending", timestamp: start });
+
+      this.addEventListener("load", () => {
+        let responseBody;
+        try { responseBody = bridge.truncate(this.responseText); } catch { /* binary */ }
+
+        let responseHeaders;
+        try {
+          const raw = this.getAllResponseHeaders();
+          if (raw) {
+            responseHeaders = {};
+            raw.trim().split(/\\r?\\n/).forEach(line => {
+              const idx = line.indexOf(": ");
+              if (idx > 0) responseHeaders[line.slice(0, idx).toLowerCase()] = line.slice(idx + 2);
+            });
+          }
+        } catch { /* ignore */ }
+
+        bridge.send({ id, type: "network", transport: "xhr", method, url,
+          status: this.status, requestBody, requestHeaders: reqHeaders,
+          responseBody, responseHeaders,
+          state: this.status >= 200 && this.status < 400 ? "success" : "error",
+          duration: Date.now() - start, timestamp: start });
+      });
+
+      this.addEventListener("error", () => {
+        bridge.send({ id, type: "network", transport: "xhr", method, url,
+          requestBody, requestHeaders: reqHeaders,
+          state: "error", duration: Date.now() - start, timestamp: start });
+      });
+
+      return _origSend.apply(this, [body]);
+    };
+  } catch { /* not available */ }
+}
+`;
+  }
+
   return `/**
  * codetraxis agent — XHR interceptor (auto-generated, do not edit).
  * Patches XMLHttpRequest.prototype so existing references (e.g. axios
@@ -898,8 +1510,171 @@ export function setupXhrInterceptor(bridge: TreeViewerBridge): void {
 
 // ─── index.ts ─────────────────────────────────────────────────────────────────
 
-function buildAgentIndexSource(kind: ProjectKind): string {
+function buildAgentIndexSource(kind: ProjectKind, serverPort: string, useJs = false): string {
   const isRn = kind === "expo" || kind === "react-native";
+  if (useJs) {
+    return `/**
+ * codetraxis debug agent — entry point (auto-generated, do not edit).
+ */
+import { createTreeViewerBridge } from "./shared";
+import { setupConsoleInterceptor } from "./interceptors/consoleInterceptor";
+import { setupFetchInterceptor }   from "./interceptors/fetchInterceptor";
+import { setupXhrInterceptor }     from "./interceptors/xhrInterceptor";
+
+export const treeViewerBridge = createTreeViewerBridge("__PORT__");
+
+setupConsoleInterceptor(treeViewerBridge);
+setupFetchInterceptor(treeViewerBridge);
+${isRn ? "setupXhrInterceptor(treeViewerBridge); // React Native uses XHR under the hood" : "setupXhrInterceptor(treeViewerBridge);"}
+
+// ─── Auto-attach default axios instance ──────────────────────────────────────
+try {
+  const axiosModule = require("axios");
+  const axiosInstance = axiosModule?.default ?? axiosModule;
+  if (axiosInstance?.interceptors) {
+    attachAxios(axiosInstance);
+  }
+} catch { /* axios not installed — skip */ }
+
+// ─── attachAxios — for axios.create() instances ───────────────────────────────
+// Usage: import { attachAxios } from "./codetraxisAgent";
+//        attachAxios(myAxiosInstance);
+export function attachAxios(instance) {
+  if (!instance?.interceptors) return;
+
+  const INSTALLED_KEY = "__tv_axios_installed__";
+  if (instance[INSTALLED_KEY]) return;
+  instance[INSTALLED_KEY] = true;
+
+  const REQ_ID_KEY    = "__tv_req_id__";
+  const REQ_START_KEY = "__tv_req_start__";
+
+  const joinUrl = (base, url) => {
+    if (!base) return url || "";
+    if (!url)  return base;
+    try { return new URL(url, base).toString(); } catch { return \`\${base}\${url}\`; }
+  };
+
+  const normalizeHeaders = (h) => {
+    if (!h) return undefined;
+    try {
+      if (typeof h.toJSON === "function") return h.toJSON();
+      return { ...h };
+    } catch { return undefined; }
+  };
+
+  instance.interceptors.request.use(
+    (config) => {
+      const id    = treeViewerBridge.uid();
+      const start = Date.now();
+      config[REQ_ID_KEY]    = id;
+      config[REQ_START_KEY] = start;
+      treeViewerBridge.send({
+        id, type: "network", transport: "axios",
+        method: (config.method || "get").toUpperCase(),
+        url: joinUrl(config.baseURL, config.url),
+        requestHeaders: normalizeHeaders(config.headers),
+        requestBody: treeViewerBridge.safeSerialize(config.data),
+        state: "pending", timestamp: start,
+      });
+      return config;
+    },
+    (error) => {
+      treeViewerBridge.send({
+        id: treeViewerBridge.uid(), type: "network", transport: "axios",
+        state: "error", timestamp: Date.now(),
+        error: treeViewerBridge.safeSerialize(error),
+      });
+      return Promise.reject(error);
+    },
+  );
+
+  instance.interceptors.response.use(
+    (response) => {
+      const id    = response.config[REQ_ID_KEY]    || treeViewerBridge.uid();
+      const start = response.config[REQ_START_KEY] || Date.now();
+      treeViewerBridge.send({
+        id, type: "network", transport: "axios",
+        method: (response.config.method || "get").toUpperCase(),
+        url: joinUrl(response.config.baseURL, response.config.url),
+        status: response.status,
+        requestHeaders: normalizeHeaders(response.config.headers),
+        requestBody: treeViewerBridge.safeSerialize(response.config.data),
+        responseHeaders: normalizeHeaders(response.headers),
+        responseBody: treeViewerBridge.safeSerialize(response.data),
+        state: "success", duration: Date.now() - start, timestamp: start,
+      });
+      return response;
+    },
+    (error) => {
+      const cfg   = error?.config || {};
+      const id    = cfg[REQ_ID_KEY]    || treeViewerBridge.uid();
+      const start = cfg[REQ_START_KEY] || Date.now();
+      treeViewerBridge.send({
+        id, type: "network", transport: "axios",
+        method: (cfg.method || "get").toUpperCase(),
+        url: joinUrl(cfg.baseURL, cfg.url),
+        status: error?.response?.status,
+        requestHeaders: normalizeHeaders(cfg.headers),
+        requestBody: treeViewerBridge.safeSerialize(cfg.data),
+        responseHeaders: normalizeHeaders(error?.response?.headers),
+        responseBody: treeViewerBridge.safeSerialize(error?.response?.data),
+        state: "error", duration: Date.now() - start, timestamp: start,
+        error: treeViewerBridge.safeSerialize({ message: error?.message, code: error?.code, name: error?.name }),
+      });
+      return Promise.reject(error);
+    },
+  );
+}
+
+// ─── attachSocketIO — for socket.io-client instances ─────────────────────────
+// Usage: import { attachSocketIO } from "./codetraxisAgent";
+//        attachSocketIO(socket);
+export function attachSocketIO(socket) {
+  if (!socket) return;
+
+  const INSTALLED_KEY = "__tv_sio_installed__";
+  if (socket[INSTALLED_KEY]) return;
+  socket[INSTALLED_KEY] = true;
+
+  const url = socket.io?.uri ?? socket.nsp ?? "socket.io";
+
+  socket.onAny((event, ...args) => {
+    treeViewerBridge.send({
+      id: treeViewerBridge.uid(),
+      type: "network",
+      transport: "websocket",
+      url,
+      method: "MESSAGE",
+      responseBody: treeViewerBridge.truncate(
+        JSON.stringify({ event, data: args.length === 1 ? args[0] : args }),
+      ),
+      state: "success",
+      timestamp: Date.now(),
+    });
+  });
+
+  const origEmit = socket.emit.bind(socket);
+  socket.emit = (event, ...args) => {
+    if (!["ping", "pong"].includes(event)) {
+      treeViewerBridge.send({
+        id: treeViewerBridge.uid(),
+        type: "network",
+        transport: "websocket",
+        url,
+        method: "SEND",
+        requestBody: treeViewerBridge.truncate(
+          JSON.stringify({ event, data: args[0] }),
+        ),
+        state: "success",
+        timestamp: Date.now(),
+      });
+    }
+    return origEmit(event, ...args);
+  };
+}
+`.replace("__PORT__", serverPort);
+  }
   return `/**
  * codetraxis debug agent — entry point (auto-generated, do not edit).
  */
@@ -1068,5 +1843,5 @@ export function attachSocketIO(socket: any): void {
 }
 
 export {};
-`.replace("__PORT__", "${process.env.PORT ?? '3333'}");
+`.replace("__PORT__", serverPort);
 }
