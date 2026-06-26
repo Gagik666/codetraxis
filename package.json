@@ -1,6 +1,6 @@
 {
     "name": "codetraxis",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "React & React Native debug tool with network inspector, console timeline and live file explorer",
     "keywords": [
         "react debug tool",
