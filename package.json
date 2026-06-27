@@ -30,7 +30,8 @@
     "files": [
         "bin",
         "server/dist",
-        "client/dist"
+        "client/dist",
+        "codetraxisAgent"
     ],
     "scripts": {
         "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",

@@ -1,0 +1,97 @@
+/**
+ * codetraxis agent — shared bridge.
+ * __PORT__ is replaced at install time with the actual server port.
+ */
+
+export type TreeViewerEvent = Record<string, unknown>;
+
+export interface TreeViewerBridge {
+  send: (event: TreeViewerEvent) => void;
+  uid: () => string;
+  safeSerialize: (value: unknown, depth?: number) => unknown;
+  truncate: (value: string, max?: number) => string;
+  isWeb: boolean;
+}
+
+export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
+  const g = globalThis as Record<string, any>;
+
+  const isWeb: boolean =
+    typeof g.document !== "undefined" &&
+    typeof g.addEventListener === "function";
+
+  let ws: WebSocket | null = null;
+  let wsReady = false;
+  const queue: string[] = [];
+
+  const getHost = (): string => {
+    if (typeof g.__TREE_VIEWER_HOST__ === "string" && g.__TREE_VIEWER_HOST__) {
+      return g.__TREE_VIEWER_HOST__ as string;
+    }
+    if (isWeb && g.location?.hostname) return g.location.hostname as string;
+    return "localhost";
+  };
+
+  const connect = () => {
+    try {
+      const WS =
+        typeof WebSocket !== "undefined"
+          ? WebSocket
+          : (g.WebSocket as typeof WebSocket | undefined);
+      if (!WS) return;
+
+      ws = new WS(`ws://${getHost()}:${serverPort}/agent`);
+      ws.onopen  = () => {
+        wsReady = true;
+        while (queue.length > 0) {
+          const item = queue.shift();
+          if (item && ws) ws.send(item);
+        }
+      };
+      ws.onclose = () => { wsReady = false; setTimeout(connect, 3000); };
+      ws.onerror = () => { wsReady = false; };
+    } catch { /* unavailable */ }
+  };
+  connect();
+
+  const truncate = (value: string, max = 500000): string =>
+    value.length > max ? `${value.slice(0, max)}…[truncated]` : value;
+
+  const safeSerialize = (value: unknown, depth = 0): unknown => {
+    if (depth > 4)            return "[depth limit]";
+    if (value == null)        return value;
+    if (typeof value === "function") return `[Function: ${(value as Function).name || "anonymous"}]`;
+    if (typeof value === "symbol")   return value.toString();
+    if (typeof value !== "object")   return value;
+    if (value instanceof Error) return { __error: true, name: value.name, message: value.message, stack: value.stack };
+    if (Array.isArray(value))   return value.slice(0, 1000).map(i => safeSerialize(i, depth + 1));
+
+    const seen = new WeakSet<object>();
+    const walk = (obj: object, d: number): Record<string, unknown> | string => {
+      if (seen.has(obj)) return "[circular]";
+      seen.add(obj);
+      const r: Record<string, unknown> = {};
+      let n = 0;
+      for (const k in obj as Record<string, unknown>) {
+        if (n++ > 500) { r["..."] = "[truncated]"; break; }
+        try { r[k] = safeSerialize((obj as Record<string, unknown>)[k], d + 1); }
+        catch { r[k] = "[unserializable]"; }
+      }
+      return r;
+    };
+    return walk(value as object, depth);
+  };
+
+  const uid = () =>
+    `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+  const send = (event: TreeViewerEvent) => {
+    try {
+      const payload = JSON.stringify(event);
+      if (wsReady && ws) { ws.send(payload); }
+      else { queue.push(payload); if (queue.length > 200) queue.shift(); }
+    } catch { /* ignore */ }
+  };
+
+  return { send, uid, safeSerialize, truncate, isWeb };
+}
