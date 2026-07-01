@@ -5,6 +5,7 @@
  * Works in browser and React Native (which ships its own XHR polyfill).
  */
 import type { TreeViewerBridge } from "../shared";
+import { parseRequestBody } from "../shared";
 
 const INSTALLED_KEY = "__tv_xhr_installed__";
 
@@ -40,13 +41,10 @@ export function setupXhrInterceptor(bridge: TreeViewerBridge): void {
       const reqHeaders = (this as any).__tv_reqHeaders as Record<string, string> | undefined;
       const start      = Date.now();
 
-      let requestBody: string | undefined;
+      let requestBody: unknown;
       if (body != null) {
         try {
-          requestBody =
-            typeof body === "string"       ? bridge.truncate(body)
-            : body instanceof URLSearchParams ? bridge.truncate(body.toString())
-            : "[binary]";
+          requestBody = bridge.safeSerialize(parseRequestBody(body));
         } catch { /* ignore */ }
       }
 

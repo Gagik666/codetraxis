@@ -1,4 +1,8 @@
-import type { DebugEvent, NetworkEvent, ConsoleEvent } from "../../../../../redux/debugSlice/types";
+import type {
+  DebugEvent,
+  NetworkEvent,
+  ConsoleEvent,
+} from "../../../../../redux/debugSlice/types";
 import { formatTime, formatDelta } from "../../utils/formatters";
 import { getTitleColor, getTitle, getPreview } from "../../utils/colors";
 import { NetworkExpanded } from "../NetworkExpanded/NetworkExpanded";

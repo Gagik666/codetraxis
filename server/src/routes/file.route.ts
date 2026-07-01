@@ -8,7 +8,7 @@ const router = Router();
 
 const resolveAndGuard = (
   targetDir: string,
-  filePath: string
+  filePath: string,
 ): { absolute: string } | { error: string; status: number } => {
   if (!filePath) return { error: "path query param is required", status: 400 };
 

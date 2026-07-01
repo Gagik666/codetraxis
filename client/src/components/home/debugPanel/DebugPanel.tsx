@@ -59,7 +59,16 @@ export const DebugPanel = () => {
             title="Open Types panel"
             onClick={() => setTypesOpen((v) => !v)}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="16 18 22 12 16 6" />
               <polyline points="8 6 2 12 8 18" />
             </svg>
@@ -108,10 +117,14 @@ export const DebugPanel = () => {
         )}
       </div>
 
-      {typesOpen && createPortal(
-        <TypesPanel initialTab="custom" onClose={() => setTypesOpen(false)} />,
-        document.body
-      )}
+      {typesOpen &&
+        createPortal(
+          <TypesPanel
+            initialTab="custom"
+            onClose={() => setTypesOpen(false)}
+          />,
+          document.body,
+        )}
     </div>
   );
 };

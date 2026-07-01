@@ -11,13 +11,13 @@ export function setupConsoleInterceptor(bridge: TreeViewerBridge): void {
   g[INSTALLED_KEY] = true;
 
   const original = {
-    log:   console.log.bind(console),
-    info:  console.info.bind(console),
-    warn:  console.warn.bind(console),
+    log: console.log.bind(console),
+    info: console.info.bind(console),
+    warn: console.warn.bind(console),
     error: console.error.bind(console),
   };
 
-  (["log", "info", "warn", "error"] as const).forEach(level => {
+  (["log", "info", "warn", "error"] as const).forEach((level) => {
     // @ts-ignore
     console[level] = (...args: unknown[]) => {
       original[level](...args);
@@ -25,7 +25,7 @@ export function setupConsoleInterceptor(bridge: TreeViewerBridge): void {
         id: bridge.uid(),
         type: "console",
         level,
-        args: args.map(a => bridge.safeSerialize(a)),
+        args: args.map((a) => bridge.safeSerialize(a)),
         timestamp: Date.now(),
       });
     };

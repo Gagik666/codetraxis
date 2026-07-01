@@ -2,6 +2,7 @@
  * codetraxis agent — fetch interceptor.
  */
 import type { TreeViewerBridge } from "../shared";
+import { parseRequestBody } from "../shared";
 
 const INSTALLED_KEY = "__tv_fetch_installed__";
 
@@ -48,14 +49,11 @@ export function setupFetchInterceptor(bridge: TreeViewerBridge): void {
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
     );
 
-    let requestBody: string | undefined;
+    let requestBody: unknown;
     const rawBody = init?.body;
     if (rawBody != null) {
       try {
-        requestBody =
-          typeof rawBody === "string"       ? bridge.truncate(rawBody)
-          : rawBody instanceof URLSearchParams ? bridge.truncate(rawBody.toString())
-          : "[binary]";
+        requestBody = bridge.safeSerialize(parseRequestBody(rawBody));
       } catch { requestBody = "[unserializable-body]"; }
     }
 

@@ -95,3 +95,47 @@ export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
 
   return { send, uid, safeSerialize, truncate, isWeb };
 }
+
+/**
+ * Serialize any request body type into something JSON-safe.
+ * FormData → plain object (File/Blob entries shown as metadata strings).
+ * ArrayBuffer / Blob → "[binary data: N bytes]".
+ * URLSearchParams → decoded key=value string.
+ * String → JSON.parse attempt, fallback to raw string.
+ * Everything else → returned as-is (safeSerialize handles the rest).
+ */
+export function parseRequestBody(body: unknown): unknown {
+  if (body == null) return body;
+
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    const result: Record<string, unknown> = {};
+    body.forEach((value, key) => {
+      if (typeof File !== "undefined" && value instanceof File) {
+        result[key] = `[File: ${value.name} | ${value.type || "application/octet-stream"} | ${value.size} bytes]`;
+      } else if (typeof Blob !== "undefined" && value instanceof Blob) {
+        result[key] = `[Blob: ${value.type || "application/octet-stream"} | ${value.size} bytes]`;
+      } else {
+        result[key] = value;
+      }
+    });
+    return result;
+  }
+
+  if (typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer) {
+    return `[binary data: ${body.byteLength} bytes]`;
+  }
+
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    return `[Blob: ${body.type || "application/octet-stream"} | ${body.size} bytes]`;
+  }
+
+  if (body instanceof URLSearchParams) {
+    return body.toString();
+  }
+
+  if (typeof body === "string") {
+    try { return JSON.parse(body); } catch { return body; }
+  }
+
+  return body;
+}

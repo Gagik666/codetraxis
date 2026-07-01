@@ -46,7 +46,11 @@ export type DebugFilter = "all" | "console" | "network";
 
 // ─── Agent state ─────────────────────────────────────────────────────────────
 
-export type AgentStatus = "not-installed" | "installing" | "installed" | "error";
+export type AgentStatus =
+  | "not-installed"
+  | "installing"
+  | "installed"
+  | "error";
 
 // ─── Slice state ─────────────────────────────────────────────────────────────
 
