@@ -4,12 +4,31 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "node:http";
 import { makeGitignoreWatcher } from "./gitignoreWatcher";
 
+// ─── ANSI colors ─────────────────────────────────────────────────────────────
+const c = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  bold: '\x1b[1m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  gray: '\x1b[90m',
+  // Futuristic neon colors
+  neonCyan: '\x1b[96m',
+  neonBlue: '\x1b[38;5;117m',
+  neonPurple: '\x1b[38;5;141m',
+  electricBlue: '\x1b[38;5;81m',
+};
+
 // ─── Типы событий ────────────────────────────────────────────────────────────
 
 export type ProjectEvent =
   | { type: "tree_changed" }
   | { type: "file_changed"; path: string }
   | { type: "connected" };
+
 
 
 
@@ -71,12 +90,11 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
   });
 
   wss.on("connection", (socket) => {
-    console.log("🔌 WebSocket client connected");
     // Сразу сообщаем клиенту что подключились
     socket.send(JSON.stringify({ type: "connected" } satisfies ProjectEvent));
 
     socket.on("close", () => {
-      console.log("🔌 WebSocket client disconnected");
+      // Тихое отключение — не логируем
     });
   });
 
@@ -107,7 +125,8 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
   // Структурные изменения → tree_changed
   const onStructure = (filePath: string) => {
     const relative = path.relative(targetDir, filePath).replace(/\\/g, "/");
-    console.log(`📁 Structure change: ${relative}`);
+    const shortPath = relative.length > 50 ? '...' + relative.slice(-47) : relative;
+    console.log(`  ${c.neonPurple}${c.bold}+${c.reset} ${c.dim}${shortPath}${c.reset}`);
     pendingTreeChanged = true;
     scheduleBatch();
   };
@@ -115,7 +134,8 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
   // Изменение содержимого → file_changed + tree_changed (git-статусы обновились)
   const onChange = (filePath: string) => {
     const relative = path.relative(targetDir, filePath).replace(/\\/g, "/");
-    console.log(`📝 File changed: ${relative}`);
+    const shortPath = relative.length > 50 ? '...' + relative.slice(-47) : relative;
+    console.log(`  ${c.neonCyan}${c.bold}~${c.reset} ${c.dim}${shortPath}${c.reset}`);
     pendingFileChanges.add(relative);
     // git-статус файла мог измениться → нужно пересобрать дерево
     pendingTreeChanged = true;
@@ -132,11 +152,11 @@ export const startWatcher = (targetDir: string, httpServer: Server) => {
       // UNKNOWN — это системные сокеты / .sock файлы — chokidar не умеет их watchить, тихо игнорируем
       const e = err as NodeJS.ErrnoException;
       if (e.code === "UNKNOWN" || e.code === "ENOENT") return;
-      console.error("❌ Watcher error:", err);
+      console.error(`  ${c.yellow}⚠${c.reset}  ${c.dim}Watcher error:${c.reset}`, err);
     })
-    .on("ready", () =>
-      console.log(`👀 Watching: ${targetDir}`)
-    );
+    .on("ready", () => {
+      // Убираем лог ready — уже выводим в index.ts
+    });
 
   return watcher;
 };
