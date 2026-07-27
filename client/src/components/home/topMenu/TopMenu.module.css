@@ -44,28 +44,56 @@
     right: 16px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
-.agentBadge {
+.statusBadge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.statusIcon {
+    font-size: 14px;
+    line-height: 1;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.statusText {
     font-size: 12px;
-    color: #4caf81;
-    opacity: 0.8;
+    font-weight: 500;
+    color: #e2e8f0;
 }
 
 .removeAgentBtn {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 6px;
+    font-size: 18px;
+    font-weight: 400;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 4px;
     border: 1px solid #f8717155;
     background: transparent;
     color: #f87171;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    transition: all 0.15s;
+    line-height: 1;
 }
 
 .removeAgentBtn:hover {
     background: #3a1a1a;
     border-color: #f87171aa;
+    transform: scale(1.05);
 }

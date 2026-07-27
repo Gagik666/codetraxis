@@ -1,5 +1,5 @@
 import { createSlice, createSelector, type PayloadAction } from "@reduxjs/toolkit";
-import type { DebugEvent, DebugFilter, DebugState, AgentStatus } from "./types";
+import type { DebugEvent, DebugFilter, DebugState, AgentStatus, ConnectionStatus } from "./types";
 import type { RootState } from "../Store";
 
 const MAX_EVENTS = 500;
@@ -7,6 +7,7 @@ const MAX_EVENTS = 500;
 const initialState: DebugState = {
   agentStatus: "not-installed",
   agentError: null,
+  connectionStatus: "disconnected",
   events: [],
   filter: "all",
   installedInFile: null,
@@ -29,6 +30,9 @@ const debugSlice = createSlice({
     setInstalledInFile(state, action: PayloadAction<string>) {
       state.installedInFile = action.payload;
       state.agentStatus = "installed";
+    },
+    setConnectionStatus(state, action: PayloadAction<ConnectionStatus>) {
+      state.connectionStatus = action.payload;
     },
     addEvent(state, action: PayloadAction<DebugEvent>) {
       const incoming = action.payload;
@@ -57,6 +61,7 @@ export const {
   setAgentStatus,
   setAgentError,
   setInstalledInFile,
+  setConnectionStatus,
   addEvent,
   clearEvents,
   setFilter,
@@ -64,11 +69,12 @@ export const {
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
-export const selectAgentStatus    = (s: RootState) => s.debugReducer.agentStatus;
-export const selectAgentError     = (s: RootState) => s.debugReducer.agentError;
-export const selectAllEvents      = (s: RootState) => s.debugReducer.events;
-export const selectFilter         = (s: RootState) => s.debugReducer.filter;
-export const selectInstalledFile  = (s: RootState) => s.debugReducer.installedInFile;
+export const selectAgentStatus      = (s: RootState) => s.debugReducer.agentStatus;
+export const selectAgentError       = (s: RootState) => s.debugReducer.agentError;
+export const selectConnectionStatus = (s: RootState) => s.debugReducer.connectionStatus;
+export const selectAllEvents        = (s: RootState) => s.debugReducer.events;
+export const selectFilter           = (s: RootState) => s.debugReducer.filter;
+export const selectInstalledFile    = (s: RootState) => s.debugReducer.installedInFile;
 
 export const selectFilteredEvents = createSelector(
   selectAllEvents,

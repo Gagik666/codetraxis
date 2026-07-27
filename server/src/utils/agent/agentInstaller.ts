@@ -419,7 +419,7 @@ function injectImportLineBased(source: string, importPath: string): string {
 // Step 6 — apply plan (main export)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function installAgent(targetDir: string): Promise<InstallResult> {
+export async function installAgent(targetDir: string, projectId: string): Promise<InstallResult> {
   try {
     const { kind, plan } = await buildInstallPlan(targetDir);
 
@@ -437,7 +437,7 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
       const alreadyInstalled = htmlSource.includes("codetraxisAgent.js");
 
       // Always overwrite the bundle so it stays up-to-date
-      await fs.writeFile(bundleFile, await buildHtmlAgentBundle(port), "utf-8");
+      await fs.writeFile(bundleFile, await buildHtmlAgentBundle(port, projectId), "utf-8");
 
       // Patch index.html only if not already patched
       if (!alreadyInstalled) {
@@ -485,7 +485,7 @@ export async function installAgent(targetDir: string): Promise<InstallResult> {
     const alreadyInstalled = entrySource.includes("codetraxisAgent");
 
     // Always overwrite the agent folder so the latest version is always present.
-    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", kind, useJs);
+    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", projectId, kind, useJs);
 
     // Only inject the import if it's not there yet.
     if (!alreadyInstalled) {
@@ -647,11 +647,13 @@ function stripTypescript(src: string): string {
 async function readAgentFile(
   relativePath: string,
   port: string,
+  projectId: string,
   useJs: boolean,
 ): Promise<string> {
   const fullPath = path.join(AGENT_SRC_DIR, relativePath);
   let src = await fs.readFile(fullPath, "utf-8");
   src = src.split("__PORT__").join(port);
+  src = src.split("__PROJECT_ID__").join(projectId);
   if (useJs) src = stripTypescript(src);
   return src;
 }
@@ -670,6 +672,7 @@ async function readAgentFile(
 async function writeAgentFiles(
   agentParentDir: string,
   serverPort: string,
+  projectId: string,
   kind: ProjectKind,
   useJs = false,
 ): Promise<void> {
@@ -685,24 +688,24 @@ async function writeAgentFiles(
   // shared
   await fs.writeFile(
     path.join(agentDir, `shared.${ext}`),
-    await readAgentFile("shared.ts", serverPort, useJs),
+    await readAgentFile("shared.ts", serverPort, projectId, useJs),
     "utf-8",
   );
 
   // interceptors
   await fs.writeFile(
     path.join(interceptorsDir, `consoleInterceptor.${ext}`),
-    await readAgentFile("interceptors/consoleInterceptor.ts", serverPort, useJs),
+    await readAgentFile("interceptors/consoleInterceptor.ts", serverPort, projectId, useJs),
     "utf-8",
   );
   await fs.writeFile(
     path.join(interceptorsDir, `fetchInterceptor.${ext}`),
-    await readAgentFile("interceptors/fetchInterceptor.ts", serverPort, useJs),
+    await readAgentFile("interceptors/fetchInterceptor.ts", serverPort, projectId, useJs),
     "utf-8",
   );
   await fs.writeFile(
     path.join(interceptorsDir, `xhrInterceptor.${ext}`),
-    await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, useJs),
+    await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, projectId, useJs),
     "utf-8",
   );
 
@@ -711,7 +714,7 @@ async function writeAgentFiles(
     ? "setupXhrInterceptor(treeViewerBridge); // React Native uses XHR under the hood"
     : "setupXhrInterceptor(treeViewerBridge);";
 
-  let indexSrc = await readAgentFile("index.ts", serverPort, useJs);
+  let indexSrc = await readAgentFile("index.ts", serverPort, projectId, useJs);
   indexSrc = indexSrc.split("__XHR_LINE__").join(xhrLine);
 
   await fs.writeFile(path.join(agentDir, `index.${ext}`), indexSrc, "utf-8");
@@ -734,8 +737,8 @@ function patchHtmlFile(html: string, scriptSrc: string): string {
 
 
 /** Build a self-contained IIFE bundle for plain-HTML projects by reading agent sources from disk. */
-async function buildHtmlAgentBundle(serverPort: string): Promise<string> {
-  const read = (rel: string) => readAgentFile(rel, serverPort, true /* JS */);
+async function buildHtmlAgentBundle(serverPort: string, projectId: string): Promise<string> {
+  const read = (rel: string) => readAgentFile(rel, serverPort, projectId, true /* JS */);
 
   const shared  = await read("shared.ts");
   const console_ = await read("interceptors/consoleInterceptor.ts");
@@ -762,7 +765,7 @@ ${strip(console_)}
 ${strip(fetch_)}
 ${strip(xhr_)}
 
-  const _bridge = createTreeViewerBridge("${serverPort}");
+  const _bridge = createTreeViewerBridge("${serverPort}", "${projectId}");
   setupConsoleInterceptor(_bridge);
   setupFetchInterceptor(_bridge);
   setupXhrInterceptor(_bridge);

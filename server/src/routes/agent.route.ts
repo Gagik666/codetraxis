@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { installAgent, removeAgent } from "../utils/agent/agentInstaller";
+import { PROJECT_ID } from "../index";
 
 const router = Router();
 
@@ -10,7 +11,7 @@ const router = Router();
 router.post("/install", async (req, res) => {
   const targetDir = process.env.WORKING_DIR || process.cwd();
 
-  const result = await installAgent(targetDir);
+  const result = await installAgent(targetDir, PROJECT_ID);
 
   // Всегда возвращаем 200 — клиент проверяет result.success сам.
   // 400 приводит к тому, что axios бросает исключение и result.error теряется.

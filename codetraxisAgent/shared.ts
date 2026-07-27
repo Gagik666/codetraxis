@@ -13,7 +13,7 @@ export interface TreeViewerBridge {
   isWeb: boolean;
 }
 
-export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
+export function createTreeViewerBridge(serverPort: string, projectId: string): TreeViewerBridge {
   const g = globalThis as Record<string, any>;
 
   const isWeb: boolean =
@@ -23,6 +23,9 @@ export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
   let ws: WebSocket | null = null;
   let wsReady = false;
   const queue: string[] = [];
+  let retryCount = 0;
+  let retryTimer: any = null;
+  let heartbeatTimer: any = null;
 
   const getHost = (): string => {
     if (typeof g.__TREE_VIEWER_HOST__ === "string" && g.__TREE_VIEWER_HOST__) {
@@ -32,26 +35,94 @@ export function createTreeViewerBridge(serverPort: string): TreeViewerBridge {
     return "localhost";
   };
 
+  const log = (msg: string) => {
+    if (typeof console !== "undefined" && console.log) {
+      console.log(`[codetraxis] ${msg}`);
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if (retryTimer) return; // Already scheduled
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+    const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+    retryCount++;
+
+    log(`Reconnecting in ${delay}ms (attempt ${retryCount})...`);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, delay);
+  };
+
+  const startHeartbeat = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    // Ping every 30s to keep connection alive
+    heartbeatTimer = setInterval(() => {
+      if (wsReady && ws && ws.readyState === 1) {
+        try {
+          ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+        } catch { /* ignore */ }
+      }
+    }, 30000);
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
+
   const connect = () => {
     try {
       const WS =
         typeof WebSocket !== "undefined"
           ? WebSocket
           : (g.WebSocket as typeof WebSocket | undefined);
-      if (!WS) return;
+      if (!WS) {
+        log("WebSocket not available");
+        return;
+      }
 
-      ws = new WS(`ws://${getHost()}:${serverPort}/agent`);
-      ws.onopen  = () => {
+      const url = `ws://${getHost()}:${serverPort}/agent?projectId=${projectId}`;
+      log(`Connecting to ${url}...`);
+
+      ws = new WS(url);
+
+      ws.onopen = () => {
         wsReady = true;
+        retryCount = 0; // Reset retry count on successful connection
+        log("Connected successfully");
+
+        // Flush queued events
         while (queue.length > 0) {
           const item = queue.shift();
           if (item && ws) ws.send(item);
         }
+
+        startHeartbeat();
       };
-      ws.onclose = () => { wsReady = false; setTimeout(connect, 3000); };
-      ws.onerror = () => { wsReady = false; };
-    } catch { /* unavailable */ }
+
+      ws.onclose = (e) => {
+        wsReady = false;
+        stopHeartbeat();
+        log(`Connection closed (code: ${e.code})`);
+        scheduleReconnect();
+      };
+
+      ws.onerror = (e) => {
+        wsReady = false;
+        stopHeartbeat();
+        log(`Connection error`);
+        // onerror is always followed by onclose, so we don't schedule reconnect here
+      };
+    } catch (err) {
+      log(`Connection failed: ${err}`);
+      scheduleReconnect();
+    }
   };
+
   connect();
 
   const truncate = (value: string, max = 500000): string =>

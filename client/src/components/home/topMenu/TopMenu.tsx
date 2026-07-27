@@ -1,7 +1,7 @@
 import { COLORS } from "../../../constants/colors/colors";
 import { useAppSelector } from "../../../hooks/redux/useRedux";
 import { selectAppTree } from "../../../redux/treeSlice/TreeSlice";
-import { selectAgentStatus } from "../../../redux/debugSlice/DebugSlice";
+import { selectAgentStatus, selectConnectionStatus } from "../../../redux/debugSlice/DebugSlice";
 import styles from "./TopMenu.module.css";
 
 interface TopMenuProps {
@@ -12,6 +12,51 @@ interface TopMenuProps {
 export const TopMenu = ({ onAddAgent, onRemoveAgent }: TopMenuProps) => {
   const appTree     = useAppSelector(selectAppTree);
   const agentStatus = useAppSelector(selectAgentStatus);
+  const connectionStatus = useAppSelector(selectConnectionStatus);
+
+  const getStatusIcon = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return "●";
+      case "connecting":
+      case "reconnecting":
+        return "◐";
+      case "disconnected":
+        return "○";
+      default:
+        return "○";
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return "#4ade80";
+      case "connecting":
+        return "#fbbf24";
+      case "reconnecting":
+        return "#fb923c";
+      case "disconnected":
+        return "#ef4444";
+      default:
+        return "#64748b";
+    }
+  };
+
+  const getStatusText = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return "Agent";
+      case "connecting":
+        return "Connecting...";
+      case "reconnecting":
+        return "Reconnecting...";
+      case "disconnected":
+        return "Disconnected";
+      default:
+        return "Agent";
+    }
+  };
 
   return (
     <div
@@ -43,13 +88,21 @@ export const TopMenu = ({ onAddAgent, onRemoveAgent }: TopMenuProps) => {
 
       {agentStatus === "installed" && (
         <div className={styles.agentActive}>
-          <span className={styles.agentBadge}>🟢 Agent active</span>
+          <div className={styles.statusBadge}>
+            <span
+              className={styles.statusIcon}
+              style={{ color: getStatusColor() }}
+            >
+              {getStatusIcon()}
+            </span>
+            <span className={styles.statusText}>{getStatusText()}</span>
+          </div>
           <button
             className={styles.removeAgentBtn}
             onClick={onRemoveAgent}
             title="Удалить Debug Agent из проекта"
           >
-            Remove
+            ×
           </button>
         </div>
       )}

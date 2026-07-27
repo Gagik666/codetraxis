@@ -1,6 +1,7 @@
 /**
  * codetraxis debug agent — entry point.
  * __PORT__ is replaced at install time with the actual server port.
+ * __PROJECT_ID__ is replaced at install time with the server's unique project ID.
  * __XHR_LINE__ is replaced with the appropriate XHR setup line (with/without comment).
  */
 import { createTreeViewerBridge } from "./shared";
@@ -8,7 +9,7 @@ import { setupConsoleInterceptor } from "./interceptors/consoleInterceptor";
 import { setupFetchInterceptor }   from "./interceptors/fetchInterceptor";
 import { setupXhrInterceptor }     from "./interceptors/xhrInterceptor";
 
-export const treeViewerBridge = createTreeViewerBridge("__PORT__");
+export const treeViewerBridge = createTreeViewerBridge("__PORT__", "__PROJECT_ID__");
 
 setupConsoleInterceptor(treeViewerBridge);
 setupFetchInterceptor(treeViewerBridge);

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import treeRoute from './routes/tree.route';
 import fileRoute from './routes/file.route';
 import agentRoute from './routes/agent.route';
@@ -11,6 +12,9 @@ import { startWatcher } from './utils/watcher/watcherService';
 import { setupDebugHub } from './utils/agent/debugHub';
 
 dotenv.config({ quiet: true } as any);
+
+// Generate unique project ID for this server instance
+export const PROJECT_ID = crypto.randomBytes(8).toString('hex');
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3333', 10);
@@ -31,6 +35,11 @@ app.use(express.json());
 app.use("/api/tree", treeRoute);
 app.use("/api/file", fileRoute);
 app.use("/api/agent", agentRoute);
+
+// Expose project ID to clients
+app.get("/api/project-id", (_req, res) => {
+    res.json({ projectId: PROJECT_ID });
+});
 
 // ── Serve built client (production mode) ──────────────────────────────────────
 // __dirname в CommonJS = server/dist, поэтому ../../client/dist

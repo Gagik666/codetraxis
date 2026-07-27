@@ -52,11 +52,18 @@ export type AgentStatus =
   | "installed"
   | "error";
 
+export type ConnectionStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting";
+
 // ─── Slice state ─────────────────────────────────────────────────────────────
 
 export interface DebugState {
   agentStatus: AgentStatus;
   agentError: string | null;
+  connectionStatus: ConnectionStatus;
   events: DebugEvent[];
   filter: DebugFilter;
   /** Файл куда был инжектирован import агента */
