@@ -1,6 +1,8 @@
+/* eslint-disable no-undef */
 /**
  * codetraxis agent — fetch interceptor.
  */
+// Keep imports below to preserve ESLint directive above
 import type { TreeViewerBridge } from "../shared";
 import { parseRequestBody } from "../shared";
 

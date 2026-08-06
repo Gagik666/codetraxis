@@ -465,13 +465,7 @@ export async function installAgent(targetDir: string, projectId: string): Promis
       ? targetDir
       : path.dirname(targetFile);
 
-    // Use .js extension for plain JS projects (webpack / CRA without TS)
-    // so webpack can resolve ./codetraxisAgent without a TypeScript loader.
-    const entryExt  = path.extname(targetFile); // .js | .jsx | .ts | .tsx
-    const useJs     = entryExt === ".js" || entryExt === ".jsx";
-    const agentIndexExt = useJs ? "js" : "ts";
-
-    const agentFile  = path.join(agentDir, "codetraxisAgent", `index.${agentIndexExt}`);
+    const agentFile  = path.join(agentDir, "codetraxisAgent", "index.js");
 
     // Import path from the entry file to the agent folder's index
     let agentImportPath = AGENT_IMPORT_MARKER; // default: "./codetraxisAgent"
@@ -485,7 +479,7 @@ export async function installAgent(targetDir: string, projectId: string): Promis
     const alreadyInstalled = entrySource.includes("codetraxisAgent");
 
     // Always overwrite the agent folder so the latest version is always present.
-    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", projectId, kind, useJs);
+    await writeAgentFiles(agentDir, process.env.PORT ?? "3333", projectId, kind);
 
     // Only inject the import if it's not there yet.
     if (!alreadyInstalled) {
@@ -609,52 +603,28 @@ export async function removeAgent(targetDir: string): Promise<RemoveResult> {
 // Agent source location
 //
 // In production: __dirname = server/dist/utils/agent/
-//                pkg root  = ../../../../   → codetraxisAgent/ at root
+//                pkg root  = ../../../../   → codetraxisAgent-dist/ at root
 // In dev (ts-node): __dirname = server/src/utils/agent/
-//                   pkg root  = ../../../../   → codetraxisAgent/ at root
+//                   pkg root  = ../../../../   → codetraxisAgent-dist/ at root (if built)
+//                   fallback to codetraxisAgent/ for hot reload
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AGENT_SRC_DIR = path.resolve(__dirname, "../../../../codetraxisAgent");
-
-// ─── Strip TypeScript annotations for plain JS projects ──────────────────────
-// Removes: import type ..., : Type, <Type>, as Type, interface ..., export type ...
-// Keeps the runtime logic intact so webpack/babel can process it without ts-loader.
-
-function stripTypescript(src: string): string {
-  return src
-    // remove `import type { ... } from "..."` lines
-    .replace(/^import type\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/gm, "")
-    // remove `export type ...` and `export interface ...` blocks (single or multi-line)
-    .replace(/^export\s+(?:type|interface)\s+\w+[^{]*\{[^}]*\};?\s*$/gm, "")
-    .replace(/^export\s+(?:type|interface)\s+[^=\n]+=[^;\n]+;?\s*$/gm, "")
-    // remove `interface Foo { ... }` blocks
-    .replace(/^interface\s+\w+[^{]*\{[\s\S]*?\}\s*$/gm, "")
-    // remove inline type annotations: `: string`, `: boolean`, etc.
-    .replace(/:\s*(string|number|boolean|void|unknown|any|never|null|undefined)\b/g, "")
-    // remove `: SomeInterface` / `: Record<...>` etc.
-    .replace(/:\s*[A-Z][A-Za-z0-9_]*(?:<[^>]*>)?/g, "")
-    // remove `as SomeType` casts
-    .replace(/\bas\s+[A-Za-z][A-Za-z0-9_<>, |&[\]]*(?=\s*[),;\]}])/g, "")
-    // remove `<Type>` generic parameters
-    .replace(/<[A-Z][A-Za-z0-9_, ]*>/g, "")
-    // clean up resulting blank lines
-    .replace(/\n{3,}/g, "\n\n")
-    .trimEnd() + "\n";
-}
+const AGENT_SRC_DIR = path.resolve(__dirname, "../../../../codetraxisAgent-dist");
 
 // ─── Read agent source file and apply substitutions ──────────────────────────
+// Agent files are pre-compiled from TypeScript to clean JavaScript via tsc.
 
 async function readAgentFile(
   relativePath: string,
   port: string,
   projectId: string,
-  useJs: boolean,
 ): Promise<string> {
-  const fullPath = path.join(AGENT_SRC_DIR, relativePath);
+  // codetraxisAgent-dist/ contains .js files compiled from .ts sources
+  const jsPath = relativePath.replace(/\.ts$/, ".js");
+  const fullPath = path.join(AGENT_SRC_DIR, jsPath);
   let src = await fs.readFile(fullPath, "utf-8");
   src = src.split("__PORT__").join(port);
   src = src.split("__PROJECT_ID__").join(projectId);
-  if (useJs) src = stripTypescript(src);
   return src;
 }
 
@@ -674,11 +644,9 @@ async function writeAgentFiles(
   serverPort: string,
   projectId: string,
   kind: ProjectKind,
-  useJs = false,
 ): Promise<void> {
   const agentDir        = path.join(agentParentDir, "codetraxisAgent");
   const interceptorsDir = path.join(agentDir, "interceptors");
-  const ext             = useJs ? "js" : "ts";
   const isRn            = kind === "expo" || kind === "react-native";
 
   // Always wipe the old agent folder first so stale .ts/.js files don't coexist
@@ -687,25 +655,25 @@ async function writeAgentFiles(
 
   // shared
   await fs.writeFile(
-    path.join(agentDir, `shared.${ext}`),
-    await readAgentFile("shared.ts", serverPort, projectId, useJs),
+    path.join(agentDir, "shared.js"),
+    await readAgentFile("shared.ts", serverPort, projectId),
     "utf-8",
   );
 
   // interceptors
   await fs.writeFile(
-    path.join(interceptorsDir, `consoleInterceptor.${ext}`),
-    await readAgentFile("interceptors/consoleInterceptor.ts", serverPort, projectId, useJs),
+    path.join(interceptorsDir, "consoleInterceptor.js"),
+    await readAgentFile("interceptors/consoleInterceptor.ts", serverPort, projectId),
     "utf-8",
   );
   await fs.writeFile(
-    path.join(interceptorsDir, `fetchInterceptor.${ext}`),
-    await readAgentFile("interceptors/fetchInterceptor.ts", serverPort, projectId, useJs),
+    path.join(interceptorsDir, "fetchInterceptor.js"),
+    await readAgentFile("interceptors/fetchInterceptor.ts", serverPort, projectId),
     "utf-8",
   );
   await fs.writeFile(
-    path.join(interceptorsDir, `xhrInterceptor.${ext}`),
-    await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, projectId, useJs),
+    path.join(interceptorsDir, "xhrInterceptor.js"),
+    await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, projectId),
     "utf-8",
   );
 
@@ -714,10 +682,17 @@ async function writeAgentFiles(
     ? "setupXhrInterceptor(treeViewerBridge); // React Native uses XHR under the hood"
     : "setupXhrInterceptor(treeViewerBridge);";
 
-  let indexSrc = await readAgentFile("index.ts", serverPort, projectId, useJs);
+  let indexSrc = await readAgentFile("index.ts", serverPort, projectId);
   indexSrc = indexSrc.split("__XHR_LINE__").join(xhrLine);
 
-  await fs.writeFile(path.join(agentDir, `index.${ext}`), indexSrc, "utf-8");
+  await fs.writeFile(path.join(agentDir, "index.js"), indexSrc, "utf-8");
+
+  // Add .eslintrc.js to suppress globalThis warnings in older projects
+  await fs.writeFile(
+    path.join(agentDir, ".eslintrc.js"),
+    `module.exports = { env: { es2020: true } };\n`,
+    "utf-8",
+  );
 }
 
 
@@ -738,7 +713,7 @@ function patchHtmlFile(html: string, scriptSrc: string): string {
 
 /** Build a self-contained IIFE bundle for plain-HTML projects by reading agent sources from disk. */
 async function buildHtmlAgentBundle(serverPort: string, projectId: string): Promise<string> {
-  const read = (rel: string) => readAgentFile(rel, serverPort, projectId, true /* JS */);
+  const read = (rel: string) => readAgentFile(rel, serverPort, projectId);
 
   const shared  = await read("shared.ts");
   const console_ = await read("interceptors/consoleInterceptor.ts");

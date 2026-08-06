@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /**
  * codetraxis debug agent — entry point.
  * __PORT__ is replaced at install time with the actual server port.
@@ -13,8 +14,7 @@ export const treeViewerBridge = createTreeViewerBridge("__PORT__", "__PROJECT_ID
 
 setupConsoleInterceptor(treeViewerBridge);
 setupFetchInterceptor(treeViewerBridge);
-// @ts-ignore
-__XHR_LINE__
+setupXhrInterceptor(treeViewerBridge);
 
 // ─── Auto-attach default axios instance ──────────────────────────────────────
 // If the project uses axios, we attach interceptors to the default instance.

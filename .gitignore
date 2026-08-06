@@ -49,3 +49,4 @@ lerna-debug.log*
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+codetraxisAgent-dist/

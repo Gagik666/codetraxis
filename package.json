@@ -1,6 +1,6 @@
 {
     "name": "codetraxis",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "React & React Native debug tool with network inspector, console timeline and live file explorer",
     "keywords": [
         "react debug tool",
@@ -31,13 +31,14 @@
         "bin",
         "server/dist",
         "client/dist",
-        "codetraxisAgent"
+        "codetraxisAgent-dist"
     ],
     "scripts": {
         "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
         "build:server": "tsc -p server/tsconfig.json",
         "build:client": "vite build --config client/vite.config.ts",
-        "build": "npm run build:server && npm run build:client",
+        "build:agent": "tsc -p codetraxisAgent/tsconfig.json",
+        "build": "npm run build:agent && npm run build:server && npm run build:client",
         "start": "node server/dist/index.js",
         "codetraxis": "node bin/cli.js ."
     },

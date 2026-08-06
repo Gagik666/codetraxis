@@ -1,6 +1,8 @@
+/* eslint-disable no-undef */
 /**
  * codetraxis agent — console interceptor.
  */
+// Keep import below to preserve ESLint directive above
 import type { TreeViewerBridge } from "../shared";
 
 const INSTALLED_KEY = "__tv_console_installed__";

@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /**
  * codetraxis agent — shared bridge.
  * __PORT__ is replaced at install time with the actual server port.

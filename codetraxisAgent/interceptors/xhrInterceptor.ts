@@ -1,9 +1,11 @@
+/* eslint-disable no-undef */
 /**
  * codetraxis agent — XHR interceptor.
  * Patches XMLHttpRequest.prototype so existing references (e.g. axios
  * internals captured at import time) are also intercepted.
  * Works in browser and React Native (which ships its own XHR polyfill).
  */
+// Keep imports below to preserve ESLint directive above
 import type { TreeViewerBridge } from "../shared";
 import { parseRequestBody } from "../shared";
 
