@@ -676,6 +676,11 @@ async function writeAgentFiles(
     await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, projectId),
     "utf-8",
   );
+  await fs.writeFile(
+    path.join(interceptorsDir, "websocketInterceptor.js"),
+    await readAgentFile("interceptors/websocketInterceptor.ts", serverPort, projectId),
+    "utf-8",
+  );
 
   // index — substitute __XHR_LINE__ based on project kind
   const xhrLine = isRn

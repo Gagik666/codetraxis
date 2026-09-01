@@ -9,12 +9,14 @@ import { createTreeViewerBridge } from "./shared";
 import { setupConsoleInterceptor } from "./interceptors/consoleInterceptor";
 import { setupFetchInterceptor }   from "./interceptors/fetchInterceptor";
 import { setupXhrInterceptor }     from "./interceptors/xhrInterceptor";
+import { setupWebSocketInterceptor } from "./interceptors/websocketInterceptor";
 
 export const treeViewerBridge = createTreeViewerBridge("__PORT__", "__PROJECT_ID__");
 
 setupConsoleInterceptor(treeViewerBridge);
 setupFetchInterceptor(treeViewerBridge);
 setupXhrInterceptor(treeViewerBridge);
+setupWebSocketInterceptor(treeViewerBridge);
 
 // ─── Auto-attach default axios instance ──────────────────────────────────────
 // If the project uses axios, we attach interceptors to the default instance.
