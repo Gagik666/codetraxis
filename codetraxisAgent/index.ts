@@ -30,6 +30,77 @@ try {
   }
 } catch { /* axios not installed — skip */ }
 
+// ─── Auto-patch socket.io-client if present ──────────────────────────────────
+// React Native often uses socket.io-client which doesn't go through globalThis.WebSocket.
+// We patch Metro's module cache to intercept socket.io imports automatically.
+try {
+  const g = globalThis as Record<string, any>;
+
+  // Metro bundler stores modules in require.cache / metroRequire.cache
+  // We patch cached socket.io-client exports directly
+  if (typeof g.require === "function") {
+    // Try to find socket.io-client in the module cache
+    const cache = (g.require as any).cache || {};
+
+    // Scan all cached modules for socket.io-client
+    Object.keys(cache).forEach(moduleId => {
+      try {
+        const module = cache[moduleId];
+        if (!module || typeof module !== "object") return;
+
+        // Check if this looks like socket.io-client by inspecting exports
+        const exports = module.exports || module;
+        const ioFn = exports?.io || exports?.default;
+
+        if (ioFn && typeof ioFn === "function" && !ioFn.__tv_patched__) {
+          const originalIO = ioFn;
+          const patchedIO = function(this: any, ...args: any[]): any {
+            const socket = originalIO.apply(this, args);
+            attachSocketIO(socket);
+            return socket;
+          };
+
+          Object.setPrototypeOf(patchedIO, originalIO);
+          Object.keys(originalIO).forEach(k => {
+            try { (patchedIO as any)[k] = originalIO[k]; } catch {/* skip */}
+          });
+          (patchedIO as any).__tv_patched__ = true;
+
+          if (exports.io) exports.io = patchedIO;
+          if (exports.default) exports.default = patchedIO;
+          if (module.exports) {
+            if (module.exports.io) module.exports.io = patchedIO;
+            if (module.exports.default) module.exports.default = patchedIO;
+          }
+        }
+      } catch { /* skip this module */ }
+    });
+  }
+
+  // Also try direct require as fallback (works if socket.io loads after agent)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sio = require("socket.io-client");
+    const ioFn = sio?.io || sio?.default;
+    if (ioFn && typeof ioFn === "function" && !(ioFn as any).__tv_patched__) {
+      const originalIO = ioFn;
+      const patchedIO = function(this: any, ...args: any[]): any {
+        const socket = originalIO.apply(this, args);
+        attachSocketIO(socket);
+        return socket;
+      };
+      Object.setPrototypeOf(patchedIO, originalIO);
+      Object.keys(originalIO).forEach(k => {
+        try { (patchedIO as any)[k] = originalIO[k]; } catch {/* skip */}
+      });
+      (patchedIO as any).__tv_patched__ = true;
+
+      if (sio.io) sio.io = patchedIO;
+      if (sio.default) sio.default = patchedIO;
+    }
+  } catch { /* socket.io not installed */ }
+} catch { /* socket.io-client patching failed — skip */ }
+
 // ─── attachAxios — for axios.create() instances ───────────────────────────────
 // Usage: import { attachAxios } from "./codetraxisAgent";
 //        attachAxios(myAxiosInstance);
