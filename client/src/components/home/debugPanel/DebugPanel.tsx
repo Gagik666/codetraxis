@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useDispatch } from "react-redux";
 import type { AppDispatch } from "../../../redux/Store";
@@ -13,6 +13,7 @@ import { FILTERS, applyFilter, getFilterCount } from "./utils/filters";
 import { TimelineItem } from "./components/TimelineItem/TimelineItem";
 import { EmptyState } from "./components/EmptyState/EmptyState";
 import { TypesPanel } from "./components/TypesPanel/TypesPanel";
+import type { NetworkEvent } from "../../../redux/debugSlice/types";
 import styles from "./DebugPanel.module.css";
 
 export const DebugPanel = () => {
@@ -20,15 +21,61 @@ export const DebugPanel = () => {
   const filter = useAppSelector(selectFilter);
   const allEvents = useAppSelector(selectAllEvents);
 
-  const events = applyFilter(allEvents, filter);
-
+  const [searchQuery, setSearchQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [typesOpen, setTypesOpen] = useState(false);
+  const [selectedMethods, setSelectedMethods] = useState<Set<string>>(new Set());
+
+  const availableMethods = useMemo(() => {
+    if (filter !== "network") return [];
+    const methods = new Set<string>();
+    allEvents.forEach((e) => {
+      if (e.type === "network" && e.method) {
+        methods.add(e.method.toUpperCase());
+      }
+    });
+    return Array.from(methods).sort();
+  }, [allEvents, filter]);
+
+  const filtered = applyFilter(allEvents, filter);
+
+  let methodFiltered = filtered;
+  if (filter === "network" && selectedMethods.size > 0) {
+    methodFiltered = filtered.filter((e) => {
+      if (e.type !== "network") return false;
+      return e.method && selectedMethods.has(e.method.toUpperCase());
+    });
+  }
+
+  const events = searchQuery
+    ? methodFiltered.filter((event) => {
+        const query = searchQuery.toLowerCase();
+        if (event.type === "console") {
+          return event.args.some((arg) =>
+            String(arg).toLowerCase().includes(query)
+          );
+        }
+        if (event.type === "network") {
+          return (
+            event.url.toLowerCase().includes(query) ||
+            (event.method && event.method.toLowerCase().includes(query))
+          );
+        }
+        return false;
+      })
+    : methodFiltered;
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <span className={styles.headerTitle}>Timeline</span>
+        <input
+          type="text"
+          className={styles.searchInput}
+          placeholder="Поиск..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         <div className={styles.filterBar}>
           {FILTERS.map((f) => {
             const count = getFilterCount(allEvents, f.key);
@@ -98,6 +145,29 @@ export const DebugPanel = () => {
           </button>
         </div>
       </div>
+
+      {filter === "network" && availableMethods.length > 0 && (
+        <div className={styles.methodsBar}>
+          {availableMethods.map((method) => (
+            <label key={method} className={styles.methodCheckbox}>
+              <input
+                type="checkbox"
+                checked={selectedMethods.has(method)}
+                onChange={(e) => {
+                  const next = new Set(selectedMethods);
+                  if (e.target.checked) {
+                    next.add(method);
+                  } else {
+                    next.delete(method);
+                  }
+                  setSelectedMethods(next);
+                }}
+              />
+              <span>{method}</span>
+            </label>
+          ))}
+        </div>
+      )}
 
       <div className={styles.timeline}>
         {events.length === 0 ? (

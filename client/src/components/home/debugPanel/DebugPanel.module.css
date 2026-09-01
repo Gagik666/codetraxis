@@ -52,6 +52,71 @@
   flex-shrink: 0;
 }
 
+/* ── Search input ────────────────────────────────────────────────── */
+.searchInput {
+  width: 200px;
+  height: 30px;
+  padding: 0 10px;
+  margin-right: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #1b1b1b;
+  border: 1px solid #252525;
+  border-radius: 4px;
+  color: #a7a7a7;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.searchInput::placeholder {
+  color: #838184;
+}
+.searchInput:focus {
+  border-color: #7587a6;
+  background: #212121;
+}
+
+/* ── Methods bar ─────────────────────────────────────────────────── */
+.methodsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.methodCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #252525;
+  border-radius: 3px;
+  color: #838184;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.methodCheckbox:hover {
+  background: #2a2a2a;
+  color: #a7a7a7;
+}
+
+.methodCheckbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #7587a6;
+}
+
+.methodCheckbox input[type="checkbox"]:checked + span {
+  color: #a7a7a7;
+}
+
 /* ── Filter bar ──────────────────────────────────────────────────── */
 .filterBar {
   display: flex;
