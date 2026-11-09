@@ -4,7 +4,7 @@
  */
 // Keep imports below to preserve ESLint directive above
 import type { TreeViewerBridge } from "../shared";
-import { parseRequestBody } from "../shared";
+import { parseRequestBody, isSystemUrl } from "../shared";
 
 const INSTALLED_KEY = "__tv_fetch_installed__";
 
@@ -43,6 +43,9 @@ export function setupFetchInterceptor(bridge: TreeViewerBridge): void {
       : input instanceof URL   ? input.href
       : (input as Request).url;
 
+    // Skip framework/dev-server system traffic (HMR, static chunks, …).
+    if (isSystemUrl(url)) return originalFetch(input, init);
+
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const id    = bridge.uid();
     const start = Date.now();
@@ -72,8 +75,14 @@ export function setupFetchInterceptor(bridge: TreeViewerBridge): void {
       } catch { /* ignore */ }
 
       let responseBody: string | undefined;
-      try { responseBody = bridge.truncate(await response.clone().text()); }
-      catch { responseBody = "[binary]"; }
+      const contentType = response.headers.get("content-type") || "";
+      // Skip response body read for non-text content to avoid cloning overhead
+      if (contentType.includes("text/") || contentType.includes("application/json") || contentType.includes("application/xml")) {
+        try { responseBody = bridge.truncate(await response.clone().text()); }
+        catch { responseBody = "[binary]"; }
+      } else {
+        responseBody = `[${contentType || "binary"}]`;
+      }
 
       bridge.send({ id, type: "network", transport: "fetch", method, url,
         status: response.status, requestHeaders, requestBody,

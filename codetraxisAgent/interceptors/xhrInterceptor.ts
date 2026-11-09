@@ -7,7 +7,7 @@
  */
 // Keep imports below to preserve ESLint directive above
 import type { TreeViewerBridge } from "../shared";
-import { parseRequestBody } from "../shared";
+import { parseRequestBody, isSystemUrl } from "../shared";
 
 const INSTALLED_KEY = "__tv_xhr_installed__";
 
@@ -37,9 +37,13 @@ export function setupXhrInterceptor(bridge: TreeViewerBridge): void {
 
     const _origSend = proto.send;
     proto.send = function(this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
+      const url        = (this as any).__tv_url    ?? "";
+
+      // Skip framework/dev-server system traffic (HMR, static chunks, …).
+      if (isSystemUrl(url)) return _origSend.apply(this, [body]);
+
       const id         = bridge.uid();
       const method     = (this as any).__tv_method ?? "GET";
-      const url        = (this as any).__tv_url    ?? "";
       const reqHeaders = (this as any).__tv_reqHeaders as Record<string, string> | undefined;
       const start      = Date.now();
 
@@ -55,7 +59,13 @@ export function setupXhrInterceptor(bridge: TreeViewerBridge): void {
 
       this.addEventListener("load", () => {
         let responseBody: string | undefined;
-        try { responseBody = bridge.truncate(this.responseText); } catch { /* binary */ }
+        const contentType = this.getResponseHeader("content-type") || "";
+        // Only read response body for text-based content
+        if (contentType.includes("text/") || contentType.includes("application/json") || contentType.includes("application/xml")) {
+          try { responseBody = bridge.truncate(this.responseText); } catch { /* binary */ }
+        } else {
+          responseBody = `[${contentType || "binary"}]`;
+        }
 
         let responseHeaders: Record<string, string> | undefined;
         try {

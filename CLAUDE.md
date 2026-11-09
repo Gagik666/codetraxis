@@ -24,14 +24,17 @@ The tool runs fully locally (`127.0.0.1` bound) and injects a lightweight agent 
   - WebSocket endpoints: `/agent` (target app), `/debug` (viewer UI), `/ws` (file watcher)
   - `utils/agent/agentInstaller.ts` — scans project, injects/removes agent using `@babel/parser`
   - `utils/agent/debugHub.ts` — WebSocket relay hub (agent → viewer)
-  - `utils/watcher/watcherService.ts` — chokidar-based file watcher
+  - `utils/watcher/watcherService.ts` — chokidar-based file watcher (also wires `gitignoreWatcher.ts` to re-filter the tree when `.gitignore` changes)
+  - `utils/file/buildTree.ts` — builds the tree and annotates each node with a `gitStatus` from `utils/git/getGitStatus.ts` (folders aggregate their children's status), so the UI shows Git status indicators
 - `client/` — React 19 + Vite frontend (TypeScript → `client/dist/`)
   - Redux state: `treeSlice` (file tree), `fileSlice` (open file), `debugSlice` (events)
   - Monaco editor for file viewing (read-only)
-  - `debugPanel/` — timeline UI for console/network events (max 500, upsert by ID)
+  - `debugPanel/` — timeline UI for console/network events (max 500, upsert by ID) with client-side filter + search (`debugPanel/utils/filters.ts`) and TypeScript interface generation from payloads (`debugPanel/utils/generateTypes.ts`)
 - `codetraxisAgent/` — Template agent source copied into target projects
-  - `shared.ts` — WebSocket bridge to server
-  - `interceptors/` — patches `console`, `fetch`, `XMLHttpRequest`
+  - `index.ts` — entry; wires up all interceptors. Placeholders `__PORT__`, `__PROJECT_ID__`, `__XHR_LINE__` are substituted at install time by `agentInstaller.ts`.
+  - `shared.ts` — WebSocket bridge to server (`createTreeViewerBridge`; exposes `uid()`, `send()`, `safeSerialize()`, `truncate()`)
+  - `interceptors/` — patches `console`, `fetch`, `XMLHttpRequest`, and native `WebSocket` (`websocketInterceptor.ts`)
+  - Auto-attaches to the default `axios` instance and auto-patches `socket.io-client` (incl. React Native / Metro module cache). For `axios.create()` instances or manually-created sockets, import and call the exported `attachAxios(instance)` / `attachSocketIO(socket)` helpers.
   - Compiled to `codetraxisAgent-dist/` for npm distribution
 - `codetraxisAgent-dist/` — Compiled agent template bundled with the npm package
 
@@ -48,33 +51,36 @@ The tool runs fully locally (`127.0.0.1` bound) and injects a lightweight agent 
 
 **Development:**
 ```bash
-npm install                    # Install all dependencies
-npm run dev                    # Start dev mode (client Vite + server ts-node-dev)
-npm run build                  # Build everything (agent + server + client)
+npm install                    # Install all dependencies (root + server + client)
+npm run dev                    # Start dev mode (runs client Vite + server ts-node-dev concurrently)
+npm run build                  # Build everything (agent + server + client, in order)
 npm run build:agent            # Compile codetraxisAgent/ → codetraxisAgent-dist/
 npm run build:server           # Compile server TS → server/dist/
 npm run build:client           # Build client → client/dist/
-npm start                      # Start compiled server (serves client/dist)
+npm start                      # Start compiled server (serves client/dist from server/dist/)
+npm run codetraxis             # Test CLI in current dir (shortcut for node bin/cli.js .)
 ```
 
 **Testing the CLI locally:**
 ```bash
-npm link                       # Link package globally
+npm link                       # Link package globally for testing
 codetraxis /path/to/project    # Test in any project
+codetraxis . --dev             # Run in dev mode (ts-node-dev + Vite)
 ```
 
 **Server-only (within `server/` dir):**
 ```bash
-npm run dev                    # ts-node-dev with hot reload
+npm run dev                    # ts-node-dev with hot reload (watches src/)
 npm run build                  # tsc → dist/
-npm run lint                   # ESLint
+npm run lint                   # ESLint on src/
 ```
 
 **Client-only (within `client/` dir):**
 ```bash
-npm run dev                    # Vite dev server (port 5173, proxies API to :3333)
+npm run dev                    # Vite dev server (port 5173, proxies /api to :3333)
 npm run build                  # tsc + vite build → dist/
 npm run lint                   # ESLint
+npm run preview                # Preview production build locally
 ```
 
 **Publishing:**
@@ -102,6 +108,8 @@ npm publish                    # Publish to npm (includes: bin/, server/dist/, c
 - **Git & Ignore Filtering**: The file tree strictly honors `.gitignore` via the `ignore` package and live updates if `.gitignore` changes.
 
 ## Testing Changes
+
+There is **no automated test framework** in this repo — no `npm test`, no unit/integration runner. Verification is manual (build + run the CLI against a target project). ESLint is the only automated check, and it lives per-package (`npm run lint` inside `server/` or `client/`), not at the root.
 
 After making changes to server or client:
 1. Run `npm run build` from root

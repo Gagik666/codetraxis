@@ -1,5 +1,9 @@
 # codetraxis
 
+> **Code Tracking Axis** — a central system for observing and analyzing application behavior.
+>
+> *Code* — your source code. *Track* — real-time observation of what's happening. *Axis* — the central point around which all debugging revolves.
+
 **A local DevTools alternative for any JavaScript project.**
 
 Tired of jumping between DevTools tabs, losing console logs, and not seeing the full network flow?
@@ -11,6 +15,8 @@ npx codetraxis .
 ```
 
 Open **http://localhost:3333** — that's it.
+
+![codetraxis demo](assets/codetraxis-marketing-demo.gif)
 
 ---
 

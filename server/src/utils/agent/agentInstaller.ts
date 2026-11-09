@@ -416,11 +416,254 @@ function injectImportLineBased(source: string, importPath: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Step 5b — Next.js integration (browser-only boundary)
+//
+// A bare `import "./codetraxisAgent"` in app/layout.tsx runs ONLY on the server
+// (Server Component) and never reaches the browser, so nothing is intercepted.
+// We resolve one of three browser-safe strategies:
+//   • instrumentation    — Next ≥ 15.3: instrumentation-client.{ts,js} (client-only hook)
+//   • layout-client      — App Router < 15.3: "use client" wrapper rendered in <body>
+//   • pages-import       — Pages Router < 15.3: guarded import in pages/_app
+// ─────────────────────────────────────────────────────────────────────────────
+
+type NextMode = "instrumentation" | "layout-client" | "pages-import";
+
+interface NextPlan {
+  mode: NextMode;
+  agentParentDir: string; // where codetraxisAgent/ folder is written
+  targetFile: string;     // file created / modified
+  isTs: boolean;
+}
+
+async function getNextVersion(targetDir: string): Promise<[number, number]> {
+  const pkg = await readJson(path.join(targetDir, "package.json"));
+  const deps = { ...((pkg?.dependencies ?? {}) as Record<string, string>),
+                 ...((pkg?.devDependencies ?? {}) as Record<string, string>) };
+  const raw = deps["next"];
+  if (!raw) return [0, 0];
+  const m = raw.match(/(\d+)\.(\d+)/);
+  if (!m) return [999, 999]; // "latest" / "canary" → assume newest
+  return [parseInt(m[1], 10), parseInt(m[2], 10)];
+}
+
+const NEXT_APP_LAYOUTS = [
+  "src/app/layout.tsx", "src/app/layout.jsx", "src/app/layout.js",
+  "app/layout.tsx",     "app/layout.jsx",     "app/layout.js",
+];
+const NEXT_PAGES_APPS = [
+  "src/pages/_app.tsx", "src/pages/_app.jsx", "src/pages/_app.js",
+  "pages/_app.tsx",     "pages/_app.jsx",     "pages/_app.js",
+];
+
+async function resolveNextPlan(targetDir: string): Promise<NextPlan | null> {
+  const isTs = await fileExists(path.join(targetDir, "tsconfig.json"));
+  const [major, minor] = await getNextVersion(targetDir);
+  const useInstrumentation = major > 15 || (major === 15 && minor >= 3);
+
+  let layout: string | null = null;
+  for (const c of NEXT_APP_LAYOUTS) {
+    if (await fileExists(path.join(targetDir, c))) { layout = c; break; }
+  }
+  let pagesApp: string | null = null;
+  for (const c of NEXT_PAGES_APPS) {
+    if (await fileExists(path.join(targetDir, c))) { pagesApp = c; break; }
+  }
+
+  // Place the agent folder / instrumentation file at src/ or project root.
+  const anchor = layout ?? pagesApp ?? "";
+  const usesSrc = anchor.startsWith("src/") ||
+    (!anchor && await fileExists(path.join(targetDir, "src")));
+  const base = usesSrc ? path.join(targetDir, "src") : targetDir;
+
+  if (useInstrumentation) {
+    const ext = isTs ? "ts" : "js";
+    return { mode: "instrumentation", agentParentDir: base,
+      targetFile: path.join(base, `instrumentation-client.${ext}`), isTs };
+  }
+  if (layout) {
+    return { mode: "layout-client", agentParentDir: base,
+      targetFile: path.join(targetDir, layout), isTs };
+  }
+  if (pagesApp) {
+    return { mode: "pages-import", agentParentDir: base,
+      targetFile: path.join(targetDir, pagesApp), isTs };
+  }
+  return null;
+}
+
+/** Relative POSIX import specifier from `fromFile`'s dir to `toTarget`. */
+function relImport(fromFile: string, toTarget: string): string {
+  let rel = path.relative(path.dirname(fromFile), toTarget);
+  if (!rel.startsWith(".")) rel = "./" + rel;
+  return rel.split(path.sep).join("/");
+}
+
+/** AST-safe injection of a full import line (default/named/side-effect). */
+function injectImportLine(source: string, importLine: string): string {
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(source, {
+      sourceType: "module",
+      plugins: ["typescript", "jsx", "decorators-legacy", "classProperties"],
+      errorRecovery: true,
+    });
+  } catch {
+    return injectImportLineFallback(source, importLine);
+  }
+  let lastImportEnd = -1;
+  for (const node of ast.program.body) {
+    if (t.isImportDeclaration(node) && node.end != null) lastImportEnd = node.end;
+  }
+  if (lastImportEnd < 0) return injectImportLineFallback(source, importLine);
+  return source.slice(0, lastImportEnd) + "\n" + importLine + source.slice(lastImportEnd);
+}
+
+function injectImportLineFallback(source: string, importLine: string): string {
+  const lines = source.split("\n");
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(import\s|export\s+\*)/.test(lines[i])
+      || /^\s*const\s+\w+\s*=\s*require\(/.test(lines[i])) {
+      idx = i;
+    } else if (idx === -1 && /^\s*["']use client["'];?/.test(lines[i])) {
+      idx = i; // insert right after a leading "use client" directive
+    }
+  }
+  if (idx >= 0) lines.splice(idx + 1, 0, importLine);
+  else lines.unshift(importLine);
+  return lines.join("\n");
+}
+
+/** Insert a JSX child right after the opening <body> tag. Returns null if none. */
+function injectBodyChild(source: string, jsx: string): string | null {
+  const re = /<body(\s[^>]*)?>/;
+  if (!re.test(source)) return null;
+  return source.replace(re, (m) => `${m}\n        ${jsx}`);
+}
+
+function buildNextClientWrapper(): string {
+  return `"use client";
+// codetraxis agent — client boundary (browser-only). Auto-generated, do not edit.
+import { useEffect } from "react";
+
+export default function CodetraxisAgent() {
+  useEffect(() => {
+    import("./index");
+  }, []);
+  return null;
+}
+`;
+}
+
+async function installNextAgent(targetDir: string, projectId: string): Promise<InstallResult> {
+  const plan = await resolveNextPlan(targetDir);
+  if (!plan) {
+    return { success: false, alreadyInstalled: false, projectKind: "nextjs", strategy: "manual",
+      error: "Next.js: no app/layout or pages/_app found. Add a browser entry manually." };
+  }
+
+  const port = process.env.PORT ?? "3333";
+  await writeAgentFiles(plan.agentParentDir, port, projectId, "nextjs");
+  const agentFolder = path.join(plan.agentParentDir, "codetraxisAgent");
+
+  // ── instrumentation-client.{ts,js} — Next ≥ 15.3 (both routers) ─────────────
+  if (plan.mode === "instrumentation") {
+    const importPath = relImport(plan.targetFile, agentFolder);
+    const importLine = `import "${importPath}"; // codetraxis agent`;
+    let alreadyInstalled = false;
+
+    if (await fileExists(plan.targetFile)) {
+      const src = await fs.readFile(plan.targetFile, "utf-8");
+      alreadyInstalled = src.includes("codetraxisAgent");
+      if (!alreadyInstalled) {
+        await fs.writeFile(plan.targetFile, injectImportLine(src, importLine), "utf-8");
+      }
+    } else {
+      await fs.writeFile(plan.targetFile, importLine + "\n", "utf-8");
+    }
+    return { success: true, alreadyInstalled, entryFile: plan.targetFile,
+      agentFile: path.join(agentFolder, "index.js"), projectKind: "nextjs", strategy: "nextjs-instrumentation" };
+  }
+
+  // ── pages/_app — Pages Router < 15.3 (agent self-guards against SSR) ─────────
+  if (plan.mode === "pages-import") {
+    const importPath = relImport(plan.targetFile, agentFolder);
+    const src = await fs.readFile(plan.targetFile, "utf-8");
+    const alreadyInstalled = src.includes("codetraxisAgent");
+    if (!alreadyInstalled) {
+      await fs.writeFile(plan.targetFile,
+        injectImportLine(src, `import "${importPath}"; // codetraxis agent`), "utf-8");
+    }
+    return { success: true, alreadyInstalled, entryFile: plan.targetFile,
+      agentFile: path.join(agentFolder, "index.js"), projectKind: "nextjs", strategy: "nextjs-pages" };
+  }
+
+  // ── layout.tsx — App Router < 15.3 → "use client" wrapper in <body> ─────────
+  const wrapperExt = plan.targetFile.endsWith(".tsx") ? "tsx"
+    : plan.targetFile.endsWith(".jsx") ? "jsx"
+    : plan.isTs ? "tsx" : "jsx";
+  const wrapperFile = path.join(agentFolder, `CodetraxisAgent.${wrapperExt}`);
+  await fs.writeFile(wrapperFile, buildNextClientWrapper(), "utf-8");
+
+  const src = await fs.readFile(plan.targetFile, "utf-8");
+  const alreadyInstalled = src.includes("CodetraxisAgent") || src.includes("codetraxisAgent");
+  if (!alreadyInstalled) {
+    const importPath = relImport(plan.targetFile, wrapperFile).replace(/\.(tsx|jsx)$/, "");
+    const out = injectImportLine(src, `import CodetraxisAgent from "${importPath}"; // codetraxis agent`);
+    const withChild = injectBodyChild(out, "<CodetraxisAgent />");
+    if (withChild === null) {
+      return { success: false, alreadyInstalled: false, projectKind: "nextjs", strategy: "manual",
+        error: `Next.js: no <body> in ${path.basename(plan.targetFile)}. Render <CodetraxisAgent /> manually.` };
+    }
+    await fs.writeFile(plan.targetFile, withChild, "utf-8");
+  }
+  return { success: true, alreadyInstalled, entryFile: plan.targetFile,
+    agentFile: wrapperFile, projectKind: "nextjs", strategy: "nextjs-layout-client" };
+}
+
+async function removeNextAgent(targetDir: string): Promise<RemoveResult> {
+  const plan = await resolveNextPlan(targetDir);
+  if (!plan) return { success: false, error: "Next.js: entry not found" };
+
+  const agentFolder = path.join(plan.agentParentDir, "codetraxisAgent");
+  let deletedAgentFile: string | undefined;
+  if (await fileExists(agentFolder)) {
+    await fs.rm(agentFolder, { recursive: true, force: true });
+    deletedAgentFile = agentFolder;
+  }
+
+  if (await fileExists(plan.targetFile)) {
+    const src = await fs.readFile(plan.targetFile, "utf-8");
+    if (/codetraxisAgent|CodetraxisAgent/.test(src)) {
+      // Drop our import lines only (side-effect import or default import),
+      // then strip the rendered <CodetraxisAgent /> element WITHOUT touching
+      // siblings on the same line (e.g. {children}).
+      const out = src.split("\n")
+        .filter(l => !/(^|\W)codetraxisAgent/.test(l) && !/import\s+CodetraxisAgent\b/.test(l))
+        .join("\n")
+        .replace(/\s*<CodetraxisAgent\s*\/>/g, "");
+      // A file we created solely for the agent becomes empty (comments only) → delete it.
+      if (plan.mode === "instrumentation" && out.replace(/\/\/[^\n]*/g, "").trim() === "") {
+        await fs.unlink(plan.targetFile);
+      } else {
+        await fs.writeFile(plan.targetFile, out, "utf-8");
+      }
+    }
+  }
+  return { success: true, entryFile: plan.targetFile, agentFile: deletedAgentFile };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Step 6 — apply plan (main export)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function installAgent(targetDir: string, projectId: string): Promise<InstallResult> {
   try {
+    // Next.js needs a browser-only client boundary — handled separately.
+    if (await detectProjectKind(targetDir) === "nextjs") {
+      return await installNextAgent(targetDir, projectId);
+    }
+
     const { kind, plan } = await buildInstallPlan(targetDir);
 
     if (plan.strategy === "manual") {
@@ -498,6 +741,9 @@ export async function installAgent(targetDir: string, projectId: string): Promis
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function findEntryFile(targetDir: string): Promise<string | null> {
+  if (await detectProjectKind(targetDir) === "nextjs") {
+    return (await resolveNextPlan(targetDir))?.targetFile ?? null;
+  }
   const { plan } = await buildInstallPlan(targetDir);
   if (plan.strategy === "inject-import") return plan.targetFile;
   if (plan.strategy === "patch-html")    return plan.htmlFile;
@@ -517,6 +763,10 @@ export interface RemoveResult {
 
 export async function removeAgent(targetDir: string): Promise<RemoveResult> {
   try {
+    if (await detectProjectKind(targetDir) === "nextjs") {
+      return await removeNextAgent(targetDir);
+    }
+
     const { plan } = await buildInstallPlan(targetDir);
 
     // ── patch-html case ───────────────────────────────────────────────────────
@@ -674,11 +924,6 @@ async function writeAgentFiles(
   await fs.writeFile(
     path.join(interceptorsDir, "xhrInterceptor.js"),
     await readAgentFile("interceptors/xhrInterceptor.ts", serverPort, projectId),
-    "utf-8",
-  );
-  await fs.writeFile(
-    path.join(interceptorsDir, "websocketInterceptor.js"),
-    await readAgentFile("interceptors/websocketInterceptor.ts", serverPort, projectId),
     "utf-8",
   );
 

@@ -126,17 +126,17 @@ export function createTreeViewerBridge(serverPort: string, projectId: string): T
 
   connect();
 
-  const truncate = (value: string, max = 500000): string =>
+  const truncate = (value: string, max = 50000): string =>
     value.length > max ? `${value.slice(0, max)}…[truncated]` : value;
 
   const safeSerialize = (value: unknown, depth = 0): unknown => {
-    if (depth > 4)            return "[depth limit]";
+    if (depth > 3)            return "[depth limit]";
     if (value == null)        return value;
-    if (typeof value === "function") return `[Function: ${(value as Function).name || "anonymous"}]`;
-    if (typeof value === "symbol")   return value.toString();
+    if (typeof value === "function") return `[Function]`;
+    if (typeof value === "symbol")   return "[Symbol]";
     if (typeof value !== "object")   return value;
-    if (value instanceof Error) return { __error: true, name: value.name, message: value.message, stack: value.stack };
-    if (Array.isArray(value))   return value.slice(0, 1000).map(i => safeSerialize(i, depth + 1));
+    if (value instanceof Error) return { __error: true, name: value.name, message: value.message };
+    if (Array.isArray(value))   return value.slice(0, 100).map(i => safeSerialize(i, depth + 1));
 
     const seen = new WeakSet<object>();
     const walk = (obj: object, d: number): Record<string, unknown> | string => {
@@ -145,7 +145,7 @@ export function createTreeViewerBridge(serverPort: string, projectId: string): T
       const r: Record<string, unknown> = {};
       let n = 0;
       for (const k in obj as Record<string, unknown>) {
-        if (n++ > 500) { r["..."] = "[truncated]"; break; }
+        if (n++ > 50) { r["..."] = "[truncated]"; break; }
         try { r[k] = safeSerialize((obj as Record<string, unknown>)[k], d + 1); }
         catch { r[k] = "[unserializable]"; }
       }
@@ -160,12 +160,40 @@ export function createTreeViewerBridge(serverPort: string, projectId: string): T
   const send = (event: TreeViewerEvent) => {
     try {
       const payload = JSON.stringify(event);
-      if (wsReady && ws) { ws.send(payload); }
-      else { queue.push(payload); if (queue.length > 200) queue.shift(); }
+      // Drop events if queue is full instead of serializing them
+      if (wsReady && ws) {
+        ws.send(payload);
+      } else if (queue.length < 200) {
+        queue.push(payload);
+      }
     } catch { /* ignore */ }
   };
 
   return { send, uid, safeSerialize, truncate, isWeb };
+}
+
+/**
+ * Framework/dev-server system traffic that should never appear in the panel:
+ * Next.js HMR sockets, webpack hot-update chunks, static asset loads, etc.
+ */
+const SYSTEM_URL_PATTERNS = [
+  "_next/hmr",
+  "_next/webpack-hmr",
+  "webpack-hmr",
+  "__webpack_hmr",
+  "sockjs-node",
+  "_next/static",
+  ".hot-update.",
+  "__nextjs_original-stack-frame",
+  "on-demand-entries-ping",
+];
+
+export function isSystemUrl(url: unknown): boolean {
+  if (typeof url !== "string") return false;
+  for (const p of SYSTEM_URL_PATTERNS) {
+    if (url.indexOf(p) !== -1) return true;
+  }
+  return false;
 }
 
 /**

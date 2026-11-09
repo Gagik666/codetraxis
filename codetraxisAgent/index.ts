@@ -9,31 +9,63 @@ import { createTreeViewerBridge } from "./shared";
 import { setupConsoleInterceptor } from "./interceptors/consoleInterceptor";
 import { setupFetchInterceptor }   from "./interceptors/fetchInterceptor";
 import { setupXhrInterceptor }     from "./interceptors/xhrInterceptor";
-import { setupWebSocketInterceptor } from "./interceptors/websocketInterceptor";
 
-export const treeViewerBridge = createTreeViewerBridge("__PORT__", "__PROJECT_ID__");
-
-setupConsoleInterceptor(treeViewerBridge);
-setupFetchInterceptor(treeViewerBridge);
-setupXhrInterceptor(treeViewerBridge);
-setupWebSocketInterceptor(treeViewerBridge);
-
-// ─── Auto-attach default axios instance ──────────────────────────────────────
-// If the project uses axios, we attach interceptors to the default instance.
-// For axios.create() instances, call attachAxios(instance) manually.
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const axiosModule = require("axios");
-  const axiosInstance = axiosModule?.default ?? axiosModule;
-  if (axiosInstance?.interceptors) {
-    attachAxios(axiosInstance);
+// ─── Optional require ─────────────────────────────────────────────────────────
+// Resolves optional peer deps (axios / socket.io-client) at RUNTIME in Node /
+// Metro (React Native). The require is called through an aliased variable so web
+// bundlers (Turbopack / webpack) do NOT statically analyze it — otherwise they
+// emit "Module not found" warnings for packages the app may not have installed.
+// In the browser axios already flows through the XHR interceptor, so a failed
+// resolve here is harmless.
+function optionalRequire(name: string): any {
+  try {
+    const req: any = typeof require === "function"
+      ? require
+      : (globalThis as any).require;
+    return typeof req === "function" ? req(name) : null;
+  } catch {
+    return null;
   }
-} catch { /* axios not installed — skip */ }
+}
+
+// ─── Environment guard ───────────────────────────────────────────────────────
+// The agent is a browser / React Native runtime tool. It must NOT execute in a
+// Node.js server context (e.g. Next.js Server Components, SSR, route handlers),
+// where it would patch server-side fetch/console and try to open a WebSocket
+// from the server. We detect a real browser OR React Native, and skip Node.
+const __ct_isReactNative =
+  typeof navigator !== "undefined" && (navigator as any).product === "ReactNative";
+const __ct_isBrowser =
+  typeof window !== "undefined" && typeof document !== "undefined";
+const __ct_isNodeServer =
+  !__ct_isBrowser && !__ct_isReactNative &&
+  typeof process !== "undefined" && !!(process as any).versions?.node;
+
+export const treeViewerBridge = __ct_isNodeServer
+  ? (null as unknown as ReturnType<typeof createTreeViewerBridge>)
+  : createTreeViewerBridge("__PORT__", "__PROJECT_ID__");
+
+if (treeViewerBridge) {
+  setupConsoleInterceptor(treeViewerBridge);
+  setupFetchInterceptor(treeViewerBridge);
+  setupXhrInterceptor(treeViewerBridge);
+
+  // ─── Auto-attach default axios instance ────────────────────────────────────
+  // If the project uses axios, we attach interceptors to the default instance.
+  // For axios.create() instances, call attachAxios(instance) manually.
+  try {
+    const axiosModule = optionalRequire("axios");
+    const axiosInstance = axiosModule?.default ?? axiosModule;
+    if (axiosInstance?.interceptors) {
+      attachAxios(axiosInstance);
+    }
+  } catch { /* axios not installed — skip */ }
+}
 
 // ─── Auto-patch socket.io-client if present ──────────────────────────────────
 // React Native often uses socket.io-client which doesn't go through globalThis.WebSocket.
 // We patch Metro's module cache to intercept socket.io imports automatically.
-try {
+if (treeViewerBridge) try {
   const g = globalThis as Record<string, any>;
 
   // Metro bundler stores modules in require.cache / metroRequire.cache
@@ -79,8 +111,7 @@ try {
 
   // Also try direct require as fallback (works if socket.io loads after agent)
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const sio = require("socket.io-client");
+    const sio = optionalRequire("socket.io-client");
     const ioFn = sio?.io || sio?.default;
     if (ioFn && typeof ioFn === "function" && !(ioFn as any).__tv_patched__) {
       const originalIO = ioFn;
@@ -105,7 +136,7 @@ try {
 // Usage: import { attachAxios } from "./codetraxisAgent";
 //        attachAxios(myAxiosInstance);
 export function attachAxios(instance: any): void {
-  if (!instance?.interceptors) return;
+  if (!treeViewerBridge || !instance?.interceptors) return;
 
   const INSTALLED_KEY = "__tv_axios_installed__";
   if (instance[INSTALLED_KEY]) return;
@@ -197,7 +228,7 @@ export function attachAxios(instance: any): void {
 // Usage: import { attachSocketIO } from "./codetraxisAgent";
 //        attachSocketIO(socket);  // call after getChatSocket() or io()
 export function attachSocketIO(socket: any): void {
-  if (!socket) return;
+  if (!treeViewerBridge || !socket) return;
 
   const INSTALLED_KEY = "__tv_sio_installed__";
   if (socket[INSTALLED_KEY]) return;
